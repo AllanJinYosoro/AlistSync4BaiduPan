@@ -1,4 +1,4 @@
-# AListSync4BaiduPan
+﻿# AListSync4BaiduPan
 
 A backup/sync CLI for sending local folders to Baidu Netdisk through AList WebDAV and rclone.
 
@@ -44,7 +44,7 @@ rclone:
 tasks:
   - name: "documents"
     local: "D:/Documents"
-    remote: "/百度网盘备份/Documents"
+    remote: "/BaiduPanBackup/Documents"
 ```
 
 Set the AList password in an environment variable instead of committing it:
@@ -53,7 +53,13 @@ Set the AList password in an environment variable instead of committing it:
 $env:ALIST_PASSWORD = "your_alist_password"
 ```
 
-`password_env` names the environment variable that stores the AList WebDAV user's password. It is not your Baidu Netdisk password. The `admin` AList user can still be used. Data commands automatically use this password to write or refresh the rclone WebDAV credential.
+Or put it in the local `.env` file:
+
+```text
+ALIST_PASSWORD=your_alist_password
+```
+
+`password_env` names the environment variable that stores the AList WebDAV user's password. It is not your Baidu Netdisk password. The `admin` AList user can still be used. Data commands automatically load `.env` when present and use this password to write or refresh the rclone WebDAV credential.
 
 `server_command` is optional. When `dry-run`, `sync`, or `update` starts, the CLI checks `alist.url`; if it is unreachable and `server_command` is configured, it starts AList with that command and waits up to `startup_timeout_seconds` for the service to become reachable. `setup deps` only installs/reuses dependencies and never starts AList.
 
@@ -140,4 +146,6 @@ References:
 - [AList WebDAV](https://alistgo.com/guide/webdav.html)
 - [rclone sync](https://rclone.org/commands/rclone_sync/)
 - [rclone copy](https://rclone.org/commands/rclone_copy/)
+
+
 

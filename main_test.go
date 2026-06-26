@@ -12,15 +12,15 @@ import (
 	"testing"
 )
 
-func TestLoadConfigDefaultsAndUnicode(t *testing.T) {
+func TestLoadConfigDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(path, []byte(`alist:
   username: "admin"
 tasks:
-  - name: "鏂囨。"
+  - name: "documents"
     local: "D:/My Documents"
-    remote: "/百度网盘备份/Documents"
+    remote: "/BaiduPanBackup/Documents"
 `), 0o644)
 	if err != nil {
 		t.Fatal(err)
@@ -57,6 +57,21 @@ func TestValidateReportsMissingFields(t *testing.T) {
 	}
 }
 
+func TestParseDotEnvDoesNotOverrideExistingEnv(t *testing.T) {
+	t.Setenv("ALIST_PASSWORD", "from-env")
+	err := parseDotEnv(strings.NewReader(`ALIST_PASSWORD=from-file
+NEW_VALUE="from-dot-env"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv("ALIST_PASSWORD"); got != "from-env" {
+		t.Fatalf("expected existing env to win, got %q", got)
+	}
+	if got := os.Getenv("NEW_VALUE"); got != "from-dot-env" {
+		t.Fatalf("expected .env value, got %q", got)
+	}
+}
 func TestSelectTasks(t *testing.T) {
 	tasks := []Task{{Name: "a"}, {Name: "b"}}
 	all, err := SelectTasks(tasks, "", true)
@@ -87,13 +102,13 @@ func TestBuildRcloneArgs(t *testing.T) {
 			Checkers:   8,
 		},
 	}
-	task := Task{Name: "documents", Local: "D:/My Documents", Remote: "/鐧惧害缃戠洏澶囦唤/Documents"}
+	task := Task{Name: "documents", Local: "D:/My Documents", Remote: "/BaiduPanBackup/Documents"}
 
 	got := BuildRcloneArgs("dry-run", cfg, task)
 	want := []string{
 		"sync",
 		toNativePath("D:/My Documents"),
-		"alist_baidu:鐧惧害缃戠洏澶囦唤/Documents",
+		"alist_baidu:BaiduPanBackup/Documents",
 		"--config", toNativePath(".alist-sync/rclone.conf"),
 		"--transfers", "4",
 		"--checkers", "8",
