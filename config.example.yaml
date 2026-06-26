@@ -2,6 +2,8 @@ alist:
   url: "http://127.0.0.1:5244"
   username: "admin"
   password_env: "ALIST_PASSWORD"
+  server_command: ".alist-sync/tools/alist.exe server"
+  startup_timeout_seconds: 30
 
 rclone:
   remote: "alist_baidu"

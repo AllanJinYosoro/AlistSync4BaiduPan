@@ -1,6 +1,6 @@
 # AListSync4BaiduPan
 
-A manual backup/sync CLI for sending local folders to Baidu Netdisk through AList WebDAV and rclone.
+A backup/sync CLI for sending local folders to Baidu Netdisk through AList WebDAV and rclone.
 
 This project does not run in the background, watch files, or schedule automatic jobs. Nothing is uploaded or deleted until you run a command.
 
@@ -32,6 +32,8 @@ alist:
   url: "http://127.0.0.1:5244"
   username: "admin"
   password_env: "ALIST_PASSWORD"
+  server_command: ".alist-sync/tools/alist.exe server"
+  startup_timeout_seconds: 30
 
 rclone:
   remote: "alist_baidu"
@@ -51,18 +53,22 @@ Set the AList password in an environment variable instead of committing it:
 $env:ALIST_PASSWORD = "your_alist_password"
 ```
 
+`password_env` names the environment variable that stores the AList WebDAV user's password. It is not your Baidu Netdisk password. The `admin` AList user can still be used, but `setup rclone` always requires the password environment variable so it can write the rclone WebDAV credential.
+
+`server_command` is optional. When `sync` or `update` starts, the CLI checks `alist.url`; if it is unreachable and `server_command` is configured, it starts AList with that command and waits up to `startup_timeout_seconds` for the service to become reachable. `setup deps` only installs/reuses dependencies and never starts AList.
+
 ## Setup Notes
 
-1. Install or run AList, then confirm `http://127.0.0.1:5244` opens the AList login page.
+1. Run `alist-sync setup deps` to reuse or download `rclone` and `alist`.
 2. In AList, mount Baidu Netdisk with your own Baidu account.
 3. Enable WebDAV permissions for the AList user used by this CLI.
-4. Run `alist-sync setup deps` to reuse or download `rclone` and `alist`.
+4. Set the environment variable named by `alist.password_env`.
 5. Run `alist-sync setup rclone` to write `.alist-sync/rclone.conf`.
 6. Run `alist-sync doctor`.
 
 ## Installing AList
 
-This CLI needs a running AList server. `alist-sync setup deps` can download an `alist` binary for local helper checks, but it does not configure your AList storage or keep AList running in the background.
+This CLI needs a configured AList data directory and storage. `alist-sync setup deps` can download an `alist` binary, but it does not configure your AList storage and does not start AList during dependency setup.
 
 ### Windows manual install
 
@@ -83,7 +89,19 @@ cd C:\alist
 .\alist.exe admin random
 ```
 
-Keep the terminal window open while you use AList. If you want AList to start automatically, install it as a Windows service with NSSM or another service manager.
+After AList is configured once, set `alist.server_command` to the command that starts it, for example:
+
+```yaml
+alist:
+  server_command: "C:/alist/alist.exe server"
+```
+
+If you rely on the binary downloaded by `setup deps`, use:
+
+```yaml
+alist:
+  server_command: ".alist-sync/tools/alist.exe server"
+```
 
 ### Docker install
 

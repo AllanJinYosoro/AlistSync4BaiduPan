@@ -36,9 +36,11 @@ type Config struct {
 }
 
 type AListConfig struct {
-	URL         string `yaml:"url"`
-	Username    string `yaml:"username"`
-	PasswordEnv string `yaml:"password_env"`
+	URL                   string `yaml:"url"`
+	Username              string `yaml:"username"`
+	PasswordEnv           string `yaml:"password_env"`
+	ServerCommand         string `yaml:"server_command"`
+	StartupTimeoutSeconds int    `yaml:"startup_timeout_seconds"`
 }
 
 type RcloneConfig struct {
@@ -58,6 +60,7 @@ type Runner struct {
 	stdout io.Writer
 	stderr io.Writer
 	exec   func(name string, args ...string) error
+	start  func(name string, args ...string) error
 }
 
 func main() {
@@ -70,6 +73,7 @@ func main() {
 			cmd.Stderr = os.Stderr
 			return cmd.Run()
 		},
+		start: startBackgroundProcess,
 	}
 	if err := r.Run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -101,7 +105,7 @@ func (r Runner) Run(args []string) error {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprint(w, `alist-sync - AList + rclone manual backup sync for Baidu Netdisk
+	fmt.Fprint(w, `alist-sync - AList + rclone backup sync for Baidu Netdisk
 
 Usage:
   alist-sync init
@@ -294,6 +298,9 @@ func (r Runner) cmdTransfer(mode string, args []string) error {
 		return err
 	}
 	if mode == "sync" && !*yes {
+		if err := r.ensureAListReady(cfg); err != nil {
+			return err
+		}
 		fmt.Fprintln(r.stdout, "sync can delete remote-only files. Previewing planned changes first:")
 		for _, task := range tasks {
 			args := BuildRcloneArgs("dry-run", cfg, task)
@@ -303,6 +310,11 @@ func (r Runner) cmdTransfer(mode string, args []string) error {
 			}
 		}
 		return errors.New("review the preview, then rerun sync with --yes to apply changes")
+	}
+	if mode == "sync" || mode == "update" {
+		if err := r.ensureAListReady(cfg); err != nil {
+			return err
+		}
 	}
 	for _, task := range tasks {
 		args := BuildRcloneArgs(mode, cfg, task)
@@ -329,6 +341,9 @@ func LoadConfig(path string) (Config, error) {
 	if cfg.AList.PasswordEnv == "" {
 		cfg.AList.PasswordEnv = "ALIST_PASSWORD"
 	}
+	if cfg.AList.StartupTimeoutSeconds == 0 {
+		cfg.AList.StartupTimeoutSeconds = 30
+	}
 	if cfg.Rclone.Remote == "" {
 		cfg.Rclone.Remote = "alist_baidu"
 	}
@@ -354,6 +369,9 @@ func (c Config) Validate() error {
 	}
 	if c.AList.PasswordEnv == "" {
 		missing = append(missing, "alist.password_env")
+	}
+	if c.AList.StartupTimeoutSeconds < 0 {
+		return errors.New("alist.startup_timeout_seconds must be greater than or equal to 0")
 	}
 	if c.Rclone.Remote == "" {
 		missing = append(missing, "rclone.remote")
@@ -388,6 +406,105 @@ func (c Config) Validate() error {
 		return fmt.Errorf("invalid alist.url: %w", err)
 	}
 	return nil
+}
+
+func (r Runner) ensureAListReady(cfg Config) error {
+	if isAListReachable(cfg.AList.URL) {
+		fmt.Fprintln(r.stdout, "AList is reachable:", strings.TrimRight(cfg.AList.URL, "/"))
+		return nil
+	}
+	if strings.TrimSpace(cfg.AList.ServerCommand) == "" {
+		return fmt.Errorf("AList is not reachable at %s and alist.server_command is not configured", cfg.AList.URL)
+	}
+
+	command, args, err := splitCommand(cfg.AList.ServerCommand)
+	if err != nil {
+		return fmt.Errorf("invalid alist.server_command: %w", err)
+	}
+	if r.start == nil {
+		r.start = startBackgroundProcess
+	}
+	fmt.Fprintln(r.stdout, "AList is not reachable; starting:", cfg.AList.ServerCommand)
+	if err := r.start(command, args...); err != nil {
+		return fmt.Errorf("start AList failed: %w", err)
+	}
+	timeout := time.Duration(cfg.AList.StartupTimeoutSeconds) * time.Second
+	if err := waitForAList(cfg.AList.URL, timeout); err != nil {
+		return err
+	}
+	fmt.Fprintln(r.stdout, "AList is ready:", strings.TrimRight(cfg.AList.URL, "/"))
+	return nil
+}
+
+func isAListReachable(rawURL string) bool {
+	client := http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(strings.TrimRight(rawURL, "/"))
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode < 500
+}
+
+func waitForAList(rawURL string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		if isAListReachable(rawURL) {
+			return nil
+		}
+		if timeout == 0 || time.Now().After(deadline) {
+			return fmt.Errorf("AList did not become reachable at %s within %s", rawURL, timeout)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+func splitCommand(command string) (string, []string, error) {
+	var parts []string
+	var current strings.Builder
+	var quote rune
+	for _, ch := range command {
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+				continue
+			}
+			current.WriteRune(ch)
+			continue
+		}
+		if ch == '\'' || ch == '"' {
+			quote = ch
+			continue
+		}
+		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
+			if current.Len() > 0 {
+				parts = append(parts, current.String())
+				current.Reset()
+			}
+			continue
+		}
+		current.WriteRune(ch)
+	}
+	if quote != 0 {
+		return "", nil, errors.New("unterminated quote")
+	}
+	if current.Len() > 0 {
+		parts = append(parts, current.String())
+	}
+	if len(parts) == 0 {
+		return "", nil, errors.New("empty command")
+	}
+	return parts[0], parts[1:], nil
+}
+
+func startBackgroundProcess(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return cmd.Process.Release()
 }
 
 func (c Config) RcloneConfigPath() string {
@@ -708,6 +825,8 @@ const sampleConfig = `alist:
   url: "http://127.0.0.1:5244"
   username: "admin"
   password_env: "ALIST_PASSWORD"
+  server_command: ".alist-sync/tools/alist.exe server"
+  startup_timeout_seconds: 30
 
 rclone:
   remote: "alist_baidu"

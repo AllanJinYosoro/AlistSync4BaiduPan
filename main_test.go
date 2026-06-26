@@ -1,11 +1,14 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -32,6 +35,9 @@ tasks:
 	}
 	if cfg.AList.PasswordEnv != "ALIST_PASSWORD" {
 		t.Fatalf("unexpected password env: %s", cfg.AList.PasswordEnv)
+	}
+	if cfg.AList.StartupTimeoutSeconds != 30 {
+		t.Fatalf("unexpected startup timeout: %d", cfg.AList.StartupTimeoutSeconds)
 	}
 	if cfg.Rclone.Remote != "alist_baidu" {
 		t.Fatalf("unexpected remote: %s", cfg.Rclone.Remote)
@@ -110,6 +116,11 @@ func TestBuildRcloneArgs(t *testing.T) {
 
 func TestSyncWithoutYesPreviewsThenStops(t *testing.T) {
 	dir := t.TempDir()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
 	oldWD, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -126,7 +137,7 @@ func TestSyncWithoutYesPreviewsThenStops(t *testing.T) {
 	}
 	cfgPath := filepath.Join(dir, "config.yaml")
 	err = os.WriteFile(cfgPath, []byte(`alist:
-  url: "http://127.0.0.1:5244"
+  url: "`+server.URL+`"
   username: "admin"
 rclone:
   remote: "alist_baidu"
@@ -154,6 +165,93 @@ tasks:
 	}
 	if len(calls) != 1 || calls[0][1] != "sync" || !containsArg(calls[0], "--dry-run") {
 		t.Fatalf("expected one dry-run sync preview, got %#v", calls)
+	}
+}
+
+func TestUpdateStartsAListWhenConfiguredAndWaitsUntilReady(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWD)
+	if err := os.MkdirAll(filepath.Join(".alist-sync", "tools"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(".alist-sync", "tools", exeName("rclone")), []byte("fake"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var ready atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ready.Load() {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	cfgPath := filepath.Join(dir, "config.yaml")
+	err = os.WriteFile(cfgPath, []byte(`alist:
+  url: "`+server.URL+`"
+  username: "admin"
+  server_command: '"C:\alist\alist.exe" server'
+  startup_timeout_seconds: 1
+rclone:
+  remote: "alist_baidu"
+  config_file: ".alist-sync/rclone.conf"
+tasks:
+  - name: "documents"
+    local: "D:/Documents"
+    remote: "/backup"
+`), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var started [][]string
+	var calls [][]string
+	r := Runner{
+		stdout: os.Stdout,
+		stderr: os.Stderr,
+		start: func(name string, args ...string) error {
+			started = append(started, append([]string{name}, args...))
+			ready.Store(true)
+			return nil
+		},
+		exec: func(name string, args ...string) error {
+			calls = append(calls, append([]string{name}, args...))
+			return nil
+		},
+	}
+	if err := r.cmdTransfer("update", []string{"--config", cfgPath, "documents"}); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+	if len(started) != 1 {
+		t.Fatalf("expected AList to start once, got %#v", started)
+	}
+	if started[0][0] != `C:\alist\alist.exe` || started[0][1] != "server" {
+		t.Fatalf("unexpected start command: %#v", started)
+	}
+	if len(calls) != 1 || calls[0][1] != "copy" {
+		t.Fatalf("expected one rclone copy call, got %#v", calls)
+	}
+}
+
+func TestSplitCommandPreservesWindowsBackslashes(t *testing.T) {
+	name, args, err := splitCommand(`"C:\Program Files\alist\alist.exe" server --data "D:\alist data"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != `C:\Program Files\alist\alist.exe` {
+		t.Fatalf("unexpected name: %s", name)
+	}
+	want := []string{"server", "--data", `D:\alist data`}
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("args mismatch\n got: %#v\nwant: %#v", args, want)
 	}
 }
 
