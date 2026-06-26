@@ -1,0 +1,15 @@
+alist:
+  url: "http://127.0.0.1:5244"
+  username: "admin"
+  password_env: "ALIST_PASSWORD"
+
+rclone:
+  remote: "alist_baidu"
+  config_file: ".alist-sync/rclone.conf"
+  transfers: 4
+  checkers: 8
+
+tasks:
+  - name: "documents"
+    local: "D:/Documents"
+    remote: "/百度网盘备份/Documents"

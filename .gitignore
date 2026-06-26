@@ -1,0 +1,5 @@
+.alist-sync/
+config.local.yaml
+*.log
+*.exe
+%SystemDrive%/
