@@ -34,6 +34,7 @@ func (r Runner) cmdDoctor(args []string) error {
 		checks = append(checks, checkPasswordEnv(cfg))
 		checks = append(checks, checkAListURL(cfg))
 		checks = append(checks, checkRcloneRemote(cfg))
+		checks = append(checks, checkUploadNames(cfg))
 	}
 
 	failed := false
@@ -96,4 +97,15 @@ func checkRcloneRemote(cfg Config) doctorCheck {
 	}
 	err = exec.Command(rclonePath, "lsd", cfg.Rclone.Remote+":", "--config", cfg.RcloneConfigPath()).Run()
 	return doctorCheck{name: "rclone remote", ok: err == nil, detail: errString(err)}
+}
+
+func checkUploadNames(cfg Config) doctorCheck {
+	problems, err := findUnsupportedUploadNames(cfg.Tasks, maxNameProblems)
+	if err != nil {
+		return doctorCheck{name: "upload filenames", ok: false, detail: err.Error()}
+	}
+	if len(problems) > 0 {
+		return doctorCheck{name: "upload filenames", ok: false, detail: formatNameProblems(problems)}
+	}
+	return doctorCheck{name: "upload filenames", ok: true}
 }

@@ -129,6 +129,28 @@ func TestBuildRcloneArgs(t *testing.T) {
 	}
 }
 
+func TestFindUnsupportedUploadNamesReportsFullwidthColon(t *testing.T) {
+	dir := t.TempDir()
+	bad := filepath.Join(dir, "subject\uff1aKAG52352.eml")
+	if err := os.WriteFile(bad, []byte("mail"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "normal.eml"), []byte("mail"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	problems, err := findUnsupportedUploadNames([]Task{{Name: "documents", Local: dir}}, maxNameProblems)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(problems) != 1 {
+		t.Fatalf("expected one problem, got %#v", problems)
+	}
+	if problems[0].Task != "documents" || !strings.Contains(problems[0].Why, "U+FF1A") {
+		t.Fatalf("unexpected problem: %#v", problems[0])
+	}
+}
+
 func TestSyncWithoutYesRunsSync(t *testing.T) {
 	dir := t.TempDir()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

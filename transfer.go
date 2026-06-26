@@ -29,6 +29,11 @@ func (r Runner) cmdTransfer(mode string, args []string) error {
 	if err != nil {
 		return err
 	}
+	if problems, err := findUnsupportedUploadNames(tasks, maxNameProblems); err != nil {
+		return err
+	} else if len(problems) > 0 {
+		return fmt.Errorf("%s", formatNameProblems(problems))
+	}
 	if err := r.ensureAListReady(cfg); err != nil {
 		return err
 	}
