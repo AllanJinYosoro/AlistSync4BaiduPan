@@ -14,4 +14,4 @@ rclone:
 tasks:
   - name: "documents"
     local: "D:/Documents"
-    remote: "/百度网盘备份/Documents"
+    remote: "/BaiduPanBackup/Documents"

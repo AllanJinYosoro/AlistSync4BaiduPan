@@ -114,7 +114,7 @@ func TestBuildRcloneArgs(t *testing.T) {
 	}
 }
 
-func TestSyncWithoutYesPreviewsThenStops(t *testing.T) {
+func TestSyncWithoutYesRunsSync(t *testing.T) {
 	dir := t.TempDir()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -150,21 +150,25 @@ tasks:
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("ALIST_PASSWORD", "secret")
 	var calls [][]string
 	r := Runner{
 		stdout: os.Stdout,
 		stderr: os.Stderr,
+		output: func(name string, args ...string) (string, error) {
+			return "obscured-secret", nil
+		},
 		exec: func(name string, args ...string) error {
 			calls = append(calls, append([]string{name}, args...))
 			return nil
 		},
 	}
 	err = r.cmdTransfer("sync", []string{"--config", cfgPath, "documents"})
-	if err == nil || !strings.Contains(err.Error(), "--yes") {
-		t.Fatalf("expected --yes error, got %v", err)
+	if err != nil {
+		t.Fatalf("sync failed: %v", err)
 	}
-	if len(calls) != 1 || calls[0][1] != "sync" || !containsArg(calls[0], "--dry-run") {
-		t.Fatalf("expected one dry-run sync preview, got %#v", calls)
+	if len(calls) != 1 || calls[0][1] != "sync" || containsArg(calls[0], "--dry-run") {
+		t.Fatalf("expected one real sync call, got %#v", calls)
 	}
 }
 
@@ -212,11 +216,15 @@ tasks:
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("ALIST_PASSWORD", "secret")
 	var started [][]string
 	var calls [][]string
 	r := Runner{
 		stdout: os.Stdout,
 		stderr: os.Stderr,
+		output: func(name string, args ...string) (string, error) {
+			return "obscured-secret", nil
+		},
 		start: func(name string, args ...string) error {
 			started = append(started, append([]string{name}, args...))
 			ready.Store(true)
