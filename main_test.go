@@ -100,6 +100,7 @@ func TestBuildRcloneArgs(t *testing.T) {
 			ConfigFile: ".alist-sync/rclone.conf",
 			Transfers:  4,
 			Checkers:   8,
+			Excludes:   []string{"**/.venv/**", "**/.git/**"},
 		},
 	}
 	task := Task{Name: "documents", Local: "D:/My Documents", Remote: "/BaiduPanBackup/Documents"}
@@ -112,7 +113,12 @@ func TestBuildRcloneArgs(t *testing.T) {
 		"--config", toNativePath(".alist-sync/rclone.conf"),
 		"--transfers", "4",
 		"--checkers", "8",
+		"--retries", "8",
+		"--low-level-retries", "20",
+		"--retries-sleep", "5s",
 		"--progress",
+		"--exclude", "**/.venv/**",
+		"--exclude", "**/.git/**",
 		"--dry-run", "--combined", "-",
 	}
 	if !reflect.DeepEqual(got, want) {

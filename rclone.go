@@ -58,7 +58,13 @@ func BuildRcloneArgs(mode string, cfg Config, task Task) []string {
 		"--config", cfg.RcloneConfigPath(),
 		"--transfers", strconv.Itoa(cfg.Rclone.Transfers),
 		"--checkers", strconv.Itoa(cfg.Rclone.Checkers),
+		"--retries", "8",
+		"--low-level-retries", "20",
+		"--retries-sleep", "5s",
 		"--progress",
+	}
+	for _, exclude := range cfg.Rclone.Excludes {
+		args = append(args, "--exclude", exclude)
 	}
 	if mode == "dry-run" {
 		args = append(args, "--dry-run", "--combined", "-")

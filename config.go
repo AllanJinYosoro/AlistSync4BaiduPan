@@ -36,10 +36,11 @@ type AListConfig struct {
 }
 
 type RcloneConfig struct {
-	Remote     string `yaml:"remote"`
-	ConfigFile string `yaml:"config_file"`
-	Transfers  int    `yaml:"transfers"`
-	Checkers   int    `yaml:"checkers"`
+	Remote     string   `yaml:"remote"`
+	ConfigFile string   `yaml:"config_file"`
+	Transfers  int      `yaml:"transfers"`
+	Checkers   int      `yaml:"checkers"`
+	Excludes   []string `yaml:"excludes"`
 }
 
 type Task struct {
@@ -217,6 +218,10 @@ rclone:
   config_file: ".alist-sync/rclone.conf"
   transfers: 4
   checkers: 8
+  excludes:
+    - "**/.venv/**"
+    - "**/__pycache__/**"
+    - "**/.git/**"
 
 tasks:
   - name: "documents"
