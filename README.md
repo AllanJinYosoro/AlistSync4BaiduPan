@@ -1,76 +1,46 @@
-﻿# bdp-sync
+﻿# bdp-sync.exe
 
-A backup/sync CLI for sending local folders to Baidu Netdisk through AList WebDAV and rclone.
+`bdp-sync.exe` 是一个 Windows 桌面同步工具，用 AList WebDAV 和 rclone 把本地文件夹备份到百度网盘。普通使用不需要打开终端：把 `bdp-sync.exe`、`config.yaml` 和 `.env` 放在同一目录，双击 exe 即可打开窗口。
 
-This project does not run in the background, watch files, or schedule automatic jobs. Nothing is uploaded or deleted until you run a command.
+![bdp-sync.exe 主界面](doc/images/bdp-sync-main.png)
 
-## Windows GUI
+## exe 功能
 
-Run `bdp-sync.exe` without command-line arguments to open the desktop window. The GUI reads `config.yaml`, lets you choose one configured task or all tasks, and shows command output in the log area.
+### 同步任务
 
-The window has three tabs:
+主界面的 `Sync` 标签用于执行已配置的任务：
 
-- `Sync` keeps the existing task selector and `Doctor`, `Dry run`, `Update`, and `Sync` actions.
-- `Config` lets you edit common `config.yaml` fields through a form or edit the full YAML directly. Saves are validated before the file is overwritten.
-- `Dependencies` shows the detected `rclone` and `alist` paths, can install missing tools into `.alist-sync/tools`, and can copy a manually selected executable into the local tools directory.
+- `Config` 选择要读取的配置文件，默认是当前目录下的 `config.yaml`。
+- 任务下拉框选择 `tasks[].name` 中的一个任务；勾选 `All tasks` 时会依次处理全部任务。
+- `Doctor` 只做检查：配置格式、依赖工具、AList 地址、WebDAV 凭据、rclone remote、以及本地文件名是否包含百度网盘不支持上传的字符。
+- `Dry run` 预览完整同步会发生什么，不上传、不删除。
+- `Update` 上传新增或变更的本地文件，不删除网盘端独有文件。
+- `Sync` 让网盘端与本地目录保持一致，可能删除网盘端独有文件；点击后会先弹确认框。
+- 下方日志区显示本次执行输出，`Clear` 只清空日志显示。
 
-On startup, the GUI checks for `rclone` and `alist`. If either dependency is missing, it asks before downloading anything.
+### 配置编辑
 
-Build a local Windows GUI executable during development:
+`Config` 标签提供两种编辑方式：
 
-```powershell
-go build -ldflags "-H=windowsgui" -o bdp-sync.exe ./cmd/bdp-sync
-```
+- `Form` 适合修改常用字段，例如 AList 地址、用户名、密码环境变量名、rclone 并发数、全局排除规则。
+- `YAML` 可以直接编辑完整 `config.yaml`，包括所有任务列表。
 
-That build does not open a visible `cmd`/PowerShell window when launched from Explorer, and closing the terminal that built or launched it does not close the GUI. If you need a console-oriented CLI build with normal terminal output, build a separate executable:
+点击保存时，程序会先校验 YAML 和必填字段；校验失败时不会覆盖配置文件。
 
-```powershell
-go build -o bdp-sync-cli.exe ./cmd/bdp-sync
-```
+### 依赖管理
 
-For a packaged Fyne app, install the Fyne CLI and package for Windows:
+`Dependencies` 标签用于管理 `rclone` 和 `alist`：
 
-```powershell
-go install fyne.io/tools/cmd/fyne@latest
-fyne package -os windows
-```
+- `Recheck` 重新检测 PATH 和 `.alist-sync/tools` 中的工具。
+- `Install` 下载缺失的 `rclone.exe` 和 `alist.exe` 到 `.alist-sync/tools`。
+- `Force reinstall` 重新下载并覆盖本地工具。
+- `Use rclone` / `Use AList` 可以选择已有 exe，并复制到 `.alist-sync/tools`。
 
-## Project Layout
+程序启动时也会检查依赖；如果缺少 `rclone` 或 `alist`，会询问是否下载到本地工具目录。
 
-Source code is organized by responsibility:
+## config.yaml 设置
 
-- `cmd/bdp-sync` contains the executable entrypoint.
-- `internal/config` owns YAML parsing, defaults, validation, and saving.
-- `internal/deps`, `internal/alist`, `internal/rclone`, and `internal/filename` own reusable tool, service, transfer, and preflight checks.
-- `internal/runner` implements the CLI command flow.
-- `internal/gui` implements the Fyne desktop UI.
-
-Runtime state stays outside source packages: `.alist-sync/` stores local tools and rclone config, while `data/` is AList runtime data.
-
-## Commands
-
-Passing any command-line argument keeps the CLI behavior:
-
-```powershell
-bdp-sync init
-bdp-sync setup deps
-bdp-sync doctor
-bdp-sync dry-run documents
-bdp-sync update documents
-bdp-sync sync documents
-```
-- `init` creates a default `config.yaml` template in the project directory, so you can run through the setup flow before syncing.
-- `setup deps` checks and installs dependencies needed by this toolchain (including `rclone` and `alist` helpers).
-- `doctor` validates your current environment and config, verifying credentials and remote connectivity before any data operation.
-- `dry-run` runs `rclone sync --dry-run --combined -` and previews what a full sync would change.
-- `update` runs `rclone copy`, uploading new or changed local files without deleting remote-only files.
-- `sync` runs `rclone sync`, making the remote match local contents. It can delete remote-only files.
-
-`documents` is the task name from `tasks[].name` in `config.yaml`. You can use another task name from your config, or pass `--all` to run every configured task.
-
-## Configuration
-
-Run `bdp-sync init` to create `config.yaml`:
+最小配置由三部分组成：`alist`、`rclone`、`tasks`。
 
 ```yaml
 alist:
@@ -86,6 +56,8 @@ rclone:
   transfers: 4
   checkers: 8
   excludes:
+    - "**/.venv/**"
+    - "**/__pycache__/**"
     - "**/.git/**"
 
 tasks:
@@ -96,107 +68,46 @@ tasks:
       - "private/**"
 ```
 
-Set the AList password in an environment variable instead of committing it:
+### alist
 
-```powershell
-$env:ALIST_PASSWORD = "your_alist_password"
-```
+- `url`: AList 服务地址。默认本机地址是 `http://127.0.0.1:5244`。
+- `username`: AList 里用于 WebDAV 的用户名。
+- `password_env`: 存放 AList WebDAV 密码的环境变量名。它不是百度网盘密码。
+- `server_command`: 可选。执行 `Doctor`、`Dry run`、`Update`、`Sync` 时，如果 `url` 不可访问，程序会用这个命令启动 AList。
+- `startup_timeout_seconds`: 启动 AList 后等待服务可访问的最长秒数。
 
-Or put it in the local `.env` file:
+把密码放到同目录的 `.env` 文件中更方便：
 
 ```text
-ALIST_PASSWORD=your_alist_password
+ALIST_PASSWORD=your_alist_webdav_password
 ```
 
-`password_env` names the environment variable that stores the AList WebDAV user's password. It is not your Baidu Netdisk password. The `admin` AList user can still be used. Data commands automatically load `.env` when present and use this password to write or refresh the rclone WebDAV credential.
+如果你把 `password_env` 改成别的名字，`.env` 里的变量名也要同步修改。
 
-`server_command` is optional. When `dry-run`, `sync`, or `update` starts, the CLI checks `alist.url`; if it is unreachable and `server_command` is configured, it starts AList with that command and waits up to `startup_timeout_seconds` for the service to become reachable. `setup deps` only installs/reuses dependencies and never starts AList.
+### rclone
 
-`rclone.excludes` applies to every task. `tasks[].excludes` applies only to that task, and is appended to the global excludes when building rclone `--exclude` filters.
+- `remote`: 程序写入 rclone 配置时使用的 remote 名称，通常保持 `alist_baidu` 即可。
+- `config_file`: 程序维护的 rclone 配置文件路径，默认是 `.alist-sync/rclone.conf`。
+- `transfers`: 同时传输的文件数。网络或网盘限速明显时可以调小。
+- `checkers`: 并发检查数量。
+- `excludes`: 全局排除规则，所有任务都会生效。
 
-## Setup Notes
+`rclone.conf` 由程序自动生成和刷新，通常不需要手动编辑。
 
-1. Run `bdp-sync setup deps` to reuse or download `rclone` and `alist`.
-2. In AList, mount Baidu Netdisk with your own Baidu account.
-3. Enable WebDAV permissions for the AList user used by this CLI.
-4. Set the environment variable named by `alist.password_env`.
-5. Run `bdp-sync doctor`.
-6. Run `bdp-sync update documents` or `bdp-sync sync documents`.
+### tasks
 
-The `.alist-sync/rclone.conf` file is maintained automatically by `dry-run`, `update`, and `sync`.
+每个任务表示一个本地目录到百度网盘目录的同步关系：
 
-## Installing AList
+- `name`: 窗口里显示的任务名，必须唯一。
+- `local`: 本地文件夹路径。Windows 路径可以写成 `D:/Documents`，也可以写成 `C:\\Users\\Name\\Documents`。
+- `remote`: AList 中挂载出来的远端路径，例如 `/BaiduPanBackup/Documents`。
+- `excludes`: 仅对当前任务生效的排除规则，会追加到全局 `rclone.excludes` 后面。
 
-This CLI needs a configured AList data directory and storage. `bdp-sync setup deps` can download an `alist` binary, but it does not configure your AList storage and does not start AList during dependency setup.
+`Update` 和 `Sync` 都会先检查任务中的本地文件名；如果发现百度网盘不支持上传的字符，会中止并在日志里列出问题。
 
-### Windows manual install
+## 更多文档
 
-1. Download the latest Windows asset from [AList releases](https://github.com/AlistGo/alist/releases/latest), usually `alist-windows-amd64.zip` for a 64-bit Windows PC.
-2. Unzip it to a stable folder such as `C:\alist`.
-3. Start AList:
-
-```powershell
-cd C:\alist
-.\alist.exe server
-```
-
-4. Open `http://127.0.0.1:5244` and log in as `admin`.
-5. For AList v3.25.0 and newer, set or regenerate the admin password if needed:
-
-```powershell
-.\alist.exe admin set NEW_PASSWORD
-.\alist.exe admin random
-```
-
-After AList is configured once, set `alist.server_command` to the command that starts it, for example:
-
-```yaml
-alist:
-  server_command: "C:/alist/alist.exe server"
-```
-
-If you rely on the binary downloaded by `setup deps`, use:
-
-```yaml
-alist:
-  server_command: ".alist-sync/tools/alist.exe server"
-```
-
-### Docker install
-
-If you use Docker, run AList with a persistent data volume:
-
-```powershell
-docker run -d --restart=unless-stopped `
-  -v C:\alist\data:/opt/alist/data `
-  -p 5244:5244 `
-  -e PUID=0 -e PGID=0 -e UMASK=022 `
-  --name alist xhofe/alist:latest
-```
-
-Then set or regenerate the admin password:
-
-```powershell
-docker exec -it alist ./alist admin set NEW_PASSWORD
-docker exec -it alist ./alist admin random
-```
-
-After AList is running, add Baidu Netdisk as a storage in the AList web UI, create or choose an AList user with WebDAV access, and copy that user's password into the `ALIST_PASSWORD` environment variable used by this project.
-
-## Baidu VIP/SVIP
-
-AList uses the Baidu account you configured in its Baidu Netdisk storage. rclone only talks to AList through WebDAV, so any membership benefit must come through AList's Baidu driver and Baidu's official/open upload behavior.
-
-Do not use crack APIs or limit-bypass tools. This project only uses AList WebDAV plus rclone.
-
-References:
-
-- [AList manual installation](https://alistgo.com/guide/install/manual.html)
-- [AList Docker installation](https://alistgo.com/guide/install/docker.html)
-- [AList Baidu Netdisk driver](https://alistgo.com/guide/drivers/baidu.html)
-- [AList WebDAV](https://alistgo.com/guide/webdav.html)
-- [rclone sync](https://rclone.org/commands/rclone_sync/)
-- [rclone copy](https://rclone.org/commands/rclone_copy/)
-
-
-
+- [GUI 细节](doc/gui-details.md)
+- [安装与准备](doc/installation.md)
+- [命令行兼容模式](doc/commands.md)
+- [项目结构](doc/project-layout.md)
