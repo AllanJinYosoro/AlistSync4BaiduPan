@@ -19,3 +19,5 @@ tasks:
   - name: "documents"
     local: "D:/Documents"
     remote: "/BaiduPanBackup/Documents"
+    excludes:
+      - "private/**"

@@ -47,6 +47,33 @@ tasks:
 	}
 }
 
+func TestLoadConfigTaskExcludes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(path, []byte(`alist:
+  username: "admin"
+tasks:
+  - name: "documents"
+    local: "D:/My Documents"
+    remote: "/BaiduPanBackup/Documents"
+    excludes:
+      - "private/**"
+      - "tmp/**"
+`), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"private/**", "tmp/**"}
+	if !reflect.DeepEqual(cfg.Tasks[0].Excludes, want) {
+		t.Fatalf("task excludes mismatch\n got: %#v\nwant: %#v", cfg.Tasks[0].Excludes, want)
+	}
+}
+
 func TestValidateReportsMissingFields(t *testing.T) {
 	err := (Config{}).Validate()
 	if err == nil {
@@ -103,7 +130,12 @@ func TestBuildRcloneArgs(t *testing.T) {
 			Excludes:   []string{"**/.venv/**", "**/.git/**"},
 		},
 	}
-	task := Task{Name: "documents", Local: "D:/My Documents", Remote: "/BaiduPanBackup/Documents"}
+	task := Task{
+		Name:     "documents",
+		Local:    "D:/My Documents",
+		Remote:   "/BaiduPanBackup/Documents",
+		Excludes: []string{"private/**"},
+	}
 
 	got := BuildRcloneArgs("dry-run", cfg, task)
 	want := []string{
@@ -119,6 +151,7 @@ func TestBuildRcloneArgs(t *testing.T) {
 		"--progress",
 		"--exclude", "**/.venv/**",
 		"--exclude", "**/.git/**",
+		"--exclude", "private/**",
 		"--dry-run", "--combined", "-",
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -178,6 +211,7 @@ func TestSyncWithoutYesRunsSync(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(".alist-sync", "tools", exeName("rclone")), []byte("fake"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	localDir := filepath.ToSlash(t.TempDir())
 	cfgPath := filepath.Join(dir, "config.yaml")
 	err = os.WriteFile(cfgPath, []byte(`alist:
   url: "`+server.URL+`"
@@ -187,7 +221,7 @@ rclone:
   config_file: ".alist-sync/rclone.conf"
 tasks:
   - name: "documents"
-    local: "D:/Documents"
+    local: "`+localDir+`"
     remote: "/backup"
 `), 0o644)
 	if err != nil {
@@ -242,6 +276,7 @@ func TestUpdateStartsAListWhenConfiguredAndWaitsUntilReady(t *testing.T) {
 	}))
 	defer server.Close()
 
+	localDir := filepath.ToSlash(t.TempDir())
 	cfgPath := filepath.Join(dir, "config.yaml")
 	err = os.WriteFile(cfgPath, []byte(`alist:
   url: "`+server.URL+`"
@@ -253,7 +288,7 @@ rclone:
   config_file: ".alist-sync/rclone.conf"
 tasks:
   - name: "documents"
-    local: "D:/Documents"
+    local: "`+localDir+`"
     remote: "/backup"
 `), 0o644)
 	if err != nil {

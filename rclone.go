@@ -66,6 +66,9 @@ func BuildRcloneArgs(mode string, cfg Config, task Task) []string {
 	for _, exclude := range cfg.Rclone.Excludes {
 		args = append(args, "--exclude", exclude)
 	}
+	for _, exclude := range task.Excludes {
+		args = append(args, "--exclude", exclude)
+	}
 	if mode == "dry-run" {
 		args = append(args, "--dry-run", "--combined", "-")
 	}

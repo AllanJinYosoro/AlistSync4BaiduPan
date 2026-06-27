@@ -44,9 +44,10 @@ type RcloneConfig struct {
 }
 
 type Task struct {
-	Name   string `yaml:"name"`
-	Local  string `yaml:"local"`
-	Remote string `yaml:"remote"`
+	Name     string   `yaml:"name"`
+	Local    string   `yaml:"local"`
+	Remote   string   `yaml:"remote"`
+	Excludes []string `yaml:"excludes"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -227,4 +228,6 @@ tasks:
   - name: "documents"
     local: "D:/Documents"
     remote: "/BaiduPanBackup/Documents"
+    excludes:
+      - "private/**"
 `

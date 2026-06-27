@@ -40,11 +40,15 @@ rclone:
   config_file: ".alist-sync/rclone.conf"
   transfers: 4
   checkers: 8
+  excludes:
+    - "**/.git/**"
 
 tasks:
   - name: "documents"
     local: "D:/Documents"
     remote: "/BaiduPanBackup/Documents"
+    excludes:
+      - "private/**"
 ```
 
 Set the AList password in an environment variable instead of committing it:
@@ -62,6 +66,8 @@ ALIST_PASSWORD=your_alist_password
 `password_env` names the environment variable that stores the AList WebDAV user's password. It is not your Baidu Netdisk password. The `admin` AList user can still be used. Data commands automatically load `.env` when present and use this password to write or refresh the rclone WebDAV credential.
 
 `server_command` is optional. When `dry-run`, `sync`, or `update` starts, the CLI checks `alist.url`; if it is unreachable and `server_command` is configured, it starts AList with that command and waits up to `startup_timeout_seconds` for the service to become reachable. `setup deps` only installs/reuses dependencies and never starts AList.
+
+`rclone.excludes` applies to every task. `tasks[].excludes` applies only to that task, and is appended to the global excludes when building rclone `--exclude` filters.
 
 ## Setup Notes
 
