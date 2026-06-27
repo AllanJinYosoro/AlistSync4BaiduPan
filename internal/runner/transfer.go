@@ -3,12 +3,12 @@ package runner
 import (
 	"flag"
 	"fmt"
-	"os/exec"
 
 	"bdp-sync/internal/alist"
 	"bdp-sync/internal/config"
 	"bdp-sync/internal/deps"
 	"bdp-sync/internal/filename"
+	"bdp-sync/internal/proc"
 	"bdp-sync/internal/rclone"
 )
 
@@ -65,7 +65,7 @@ func (r Runner) runOutput(name string, args ...string) (string, error) {
 	if r.output != nil {
 		return r.output(name, args...)
 	}
-	cmd := exec.Command(name, args...)
+	cmd := proc.Command(name, args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }

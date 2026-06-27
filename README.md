@@ -16,10 +16,16 @@ The window has three tabs:
 
 On startup, the GUI checks for `rclone` and `alist`. If either dependency is missing, it asks before downloading anything.
 
-Build a local Windows executable during development:
+Build a local Windows GUI executable during development:
 
 ```powershell
-go build -o bdp-sync.exe ./cmd/bdp-sync
+go build -ldflags "-H=windowsgui" -o bdp-sync.exe ./cmd/bdp-sync
+```
+
+That build does not open a visible `cmd`/PowerShell window when launched from Explorer, and closing the terminal that built or launched it does not close the GUI. If you need a console-oriented CLI build with normal terminal output, build a separate executable:
+
+```powershell
+go build -o bdp-sync-cli.exe ./cmd/bdp-sync
 ```
 
 For a packaged Fyne app, install the Fyne CLI and package for Windows:

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"bdp-sync/internal/config"
+	"bdp-sync/internal/proc"
 )
 
 type Starter func(name string, args ...string) error
@@ -138,7 +139,8 @@ func SplitCommand(command string) (string, []string, error) {
 }
 
 func StartBackgroundProcess(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
+	cmd := proc.Command(name, args...)
+	proc.Detach(cmd)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
@@ -148,7 +150,7 @@ func StartBackgroundProcess(name string, args ...string) error {
 }
 
 func StartManagedProcess(name string, args ...string) (func() error, error) {
-	cmd := exec.Command(name, args...)
+	cmd := proc.Command(name, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {

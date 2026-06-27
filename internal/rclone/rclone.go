@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"bdp-sync/internal/config"
 	"bdp-sync/internal/deps"
+	"bdp-sync/internal/proc"
 )
 
 type OutputFunc func(name string, args ...string) (string, error)
@@ -79,7 +79,7 @@ func BuildArgs(mode string, cfg config.Config, task config.Task) []string {
 }
 
 func runOutput(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
+	cmd := proc.Command(name, args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }

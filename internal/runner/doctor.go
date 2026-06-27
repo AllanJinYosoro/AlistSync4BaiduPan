@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"bdp-sync/internal/config"
 	"bdp-sync/internal/deps"
 	"bdp-sync/internal/filename"
+	"bdp-sync/internal/proc"
 	"bdp-sync/internal/rclone"
 )
 
@@ -95,7 +95,7 @@ type doctorCheck struct {
 }
 
 func checkCommand(name string, args ...string) doctorCheck {
-	err := exec.Command(name, args...).Run()
+	err := proc.Command(name, args...).Run()
 	return doctorCheck{name: name, ok: err == nil, detail: errString(err)}
 }
 
