@@ -1,24 +1,16 @@
-package main
+package gui
 
 import (
 	"errors"
 	"fmt"
 	"strings"
-)
 
-func taskNames(cfg Config) []string {
-	names := make([]string, 0, len(cfg.Tasks))
-	for _, task := range cfg.Tasks {
-		if task.Name != "" {
-			names = append(names, task.Name)
-		}
-	}
-	return names
-}
+	"bdp-sync/internal/config"
+)
 
 func guiCommandArgs(action, configPath, selectedTask string, all bool) ([]string, error) {
 	if strings.TrimSpace(configPath) == "" {
-		configPath = defaultConfigPath
+		configPath = config.DefaultPath
 	}
 
 	switch action {

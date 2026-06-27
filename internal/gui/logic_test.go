@@ -1,12 +1,14 @@
-package main
+package gui
 
 import (
 	"reflect"
 	"testing"
+
+	"bdp-sync/internal/config"
 )
 
 func TestTaskNamesSkipsEmptyNames(t *testing.T) {
-	got := taskNames(Config{Tasks: []Task{{Name: "PASSRec"}, {}, {Name: "BioGNN"}}})
+	got := config.TaskNames(config.Config{Tasks: []config.Task{{Name: "PASSRec"}, {}, {Name: "BioGNN"}}})
 	want := []string{"PASSRec", "BioGNN"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("task names mismatch\n got: %#v\nwant: %#v", got, want)
@@ -47,7 +49,7 @@ func TestGUICommandArgs(t *testing.T) {
 			name:     "default config path",
 			action:   "sync",
 			selected: "BioGNN",
-			want:     []string{"sync", "--config", defaultConfigPath, "BioGNN"},
+			want:     []string{"sync", "--config", config.DefaultPath, "BioGNN"},
 		},
 		{
 			name:    "missing task",

@@ -1,4 +1,4 @@
-package main
+package runner
 
 import (
 	"net/http"
@@ -10,6 +10,12 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"bdp-sync/internal/alist"
+	"bdp-sync/internal/config"
+	"bdp-sync/internal/deps"
+	"bdp-sync/internal/filename"
+	"bdp-sync/internal/rclone"
 )
 
 func TestLoadConfigDefaults(t *testing.T) {
@@ -26,7 +32,7 @@ tasks:
 		t.Fatal(err)
 	}
 
-	cfg, err := LoadConfig(path)
+	cfg, err := config.Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +70,7 @@ tasks:
 		t.Fatal(err)
 	}
 
-	cfg, err := LoadConfig(path)
+	cfg, err := config.Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +81,7 @@ tasks:
 }
 
 func TestValidateReportsMissingFields(t *testing.T) {
-	err := (Config{}).Validate()
+	err := (config.Config{}).Validate()
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
@@ -86,7 +92,7 @@ func TestValidateReportsMissingFields(t *testing.T) {
 
 func TestParseDotEnvDoesNotOverrideExistingEnv(t *testing.T) {
 	t.Setenv("ALIST_PASSWORD", "from-env")
-	err := parseDotEnv(strings.NewReader(`ALIST_PASSWORD=from-file
+	err := config.ParseDotEnv(strings.NewReader(`ALIST_PASSWORD=from-file
 NEW_VALUE="from-dot-env"
 `))
 	if err != nil {
@@ -99,30 +105,56 @@ NEW_VALUE="from-dot-env"
 		t.Fatalf("expected .env value, got %q", got)
 	}
 }
+
+func TestSaveRawConfigDoesNotOverwriteInvalidConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	original := []byte(`alist:
+  username: "admin"
+tasks:
+  - name: "documents"
+    local: "D:/Docs"
+    remote: "/backup"
+`)
+	if err := os.WriteFile(path, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SaveRaw(path, []byte("alist: [")); err == nil {
+		t.Fatal("expected invalid YAML to fail")
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("config was overwritten\n got: %q\nwant: %q", got, original)
+	}
+}
+
 func TestSelectTasks(t *testing.T) {
-	tasks := []Task{{Name: "a"}, {Name: "b"}}
-	all, err := SelectTasks(tasks, "", true)
+	tasks := []config.Task{{Name: "a"}, {Name: "b"}}
+	all, err := config.SelectTasks(tasks, "", true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(all) != 2 {
 		t.Fatalf("expected all tasks, got %d", len(all))
 	}
-	one, err := SelectTasks(tasks, "b", false)
+	one, err := config.SelectTasks(tasks, "b", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if one[0].Name != "b" {
 		t.Fatalf("unexpected task: %v", one)
 	}
-	if _, err := SelectTasks(tasks, "", false); err == nil {
+	if _, err := config.SelectTasks(tasks, "", false); err == nil {
 		t.Fatal("expected error when multiple tasks and no selector")
 	}
 }
 
 func TestBuildRcloneArgs(t *testing.T) {
-	cfg := Config{
-		Rclone: RcloneConfig{
+	cfg := config.Config{
+		Rclone: config.RcloneConfig{
 			Remote:     "alist_baidu",
 			ConfigFile: ".alist-sync/rclone.conf",
 			Transfers:  4,
@@ -130,19 +162,19 @@ func TestBuildRcloneArgs(t *testing.T) {
 			Excludes:   []string{"**/.venv/**", "**/.git/**"},
 		},
 	}
-	task := Task{
+	task := config.Task{
 		Name:     "documents",
 		Local:    "D:/My Documents",
 		Remote:   "/BaiduPanBackup/Documents",
 		Excludes: []string{"private/**"},
 	}
 
-	got := BuildRcloneArgs("dry-run", cfg, task)
+	got := rclone.BuildArgs("dry-run", cfg, task)
 	want := []string{
 		"sync",
-		toNativePath("D:/My Documents"),
+		config.ToNativePath("D:/My Documents"),
 		"alist_baidu:BaiduPanBackup/Documents",
-		"--config", toNativePath(".alist-sync/rclone.conf"),
+		"--config", config.ToNativePath(".alist-sync/rclone.conf"),
 		"--transfers", "4",
 		"--checkers", "8",
 		"--retries", "8",
@@ -158,11 +190,11 @@ func TestBuildRcloneArgs(t *testing.T) {
 		t.Fatalf("dry-run args mismatch\n got: %#v\nwant: %#v", got, want)
 	}
 
-	update := BuildRcloneArgs("update", cfg, task)
+	update := rclone.BuildArgs("update", cfg, task)
 	if update[0] != "copy" {
 		t.Fatalf("update should use copy, got %s", update[0])
 	}
-	sync := BuildRcloneArgs("sync", cfg, task)
+	sync := rclone.BuildArgs("sync", cfg, task)
 	if sync[0] != "sync" {
 		t.Fatalf("sync should use sync, got %s", sync[0])
 	}
@@ -178,7 +210,7 @@ func TestFindUnsupportedUploadNamesReportsFullwidthColon(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	problems, err := findUnsupportedUploadNames([]Task{{Name: "documents", Local: dir}}, maxNameProblems)
+	problems, err := filename.FindUnsupportedUploadNames([]config.Task{{Name: "documents", Local: dir}}, filename.MaxProblems)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,6 +219,28 @@ func TestFindUnsupportedUploadNamesReportsFullwidthColon(t *testing.T) {
 	}
 	if problems[0].Task != "documents" || !strings.Contains(problems[0].Why, "U+FF1A") {
 		t.Fatalf("unexpected problem: %#v", problems[0])
+	}
+}
+
+func TestDependencyStatusFindsLocalTool(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWD)
+	if err := os.MkdirAll(filepath.Join(".alist-sync", "tools"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(".alist-sync", "tools", deps.ExeName("rclone")), []byte("fake"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	st := deps.CheckTool("rclone")
+	if !st.Available || st.Source != "local" {
+		t.Fatalf("expected local rclone, got %#v", st)
 	}
 }
 
@@ -208,7 +262,7 @@ func TestSyncWithoutYesRunsSync(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(".alist-sync", "tools"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(".alist-sync", "tools", exeName("rclone")), []byte("fake"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(".alist-sync", "tools", deps.ExeName("rclone")), []byte("fake"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	localDir := filepath.ToSlash(t.TempDir())
@@ -262,7 +316,7 @@ func TestUpdateStartsAListWhenConfiguredAndWaitsUntilReady(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(".alist-sync", "tools"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(".alist-sync", "tools", exeName("rclone")), []byte("fake"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(".alist-sync", "tools", deps.ExeName("rclone")), []byte("fake"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -328,7 +382,7 @@ tasks:
 }
 
 func TestSplitCommandPreservesWindowsBackslashes(t *testing.T) {
-	name, args, err := splitCommand(`"C:\Program Files\alist\alist.exe" server --data "D:\alist data"`)
+	name, args, err := alist.SplitCommand(`"C:\Program Files\alist\alist.exe" server --data "D:\alist data"`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +405,7 @@ func containsArg(args []string, want string) bool {
 }
 
 func TestToNativePath(t *testing.T) {
-	got := toNativePath(".alist-sync/rclone.conf")
+	got := config.ToNativePath(".alist-sync/rclone.conf")
 	if runtime.GOOS == "windows" && strings.Contains(got, "/") {
 		t.Fatalf("expected native windows separators, got %s", got)
 	}

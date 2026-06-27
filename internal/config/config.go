@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"bufio"
@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	defaultConfigPath = "config.yaml"
-	localStateDir     = ".alist-sync"
-	toolsDir          = ".alist-sync/tools"
+	DefaultPath   = "config.yaml"
+	LocalStateDir = ".alist-sync"
+	ToolsDir      = ".alist-sync/tools"
 )
 
 type Config struct {
@@ -50,18 +50,38 @@ type Task struct {
 	Excludes []string `yaml:"excludes"`
 }
 
-func LoadConfig(path string) (Config, error) {
-	if err := loadDotEnv(".env"); err != nil {
+func Load(path string) (Config, error) {
+	if err := LoadDotEnv(".env"); err != nil {
 		return Config{}, err
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, err
 	}
+	return ParseYAML(data)
+}
+
+func ParseYAML(data []byte) (Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return Config{}, err
 	}
+	ApplyDefaults(&cfg)
+	return cfg, nil
+}
+
+func ParseAndValidateYAML(data []byte) (Config, error) {
+	cfg, err := ParseYAML(data)
+	if err != nil {
+		return Config{}, err
+	}
+	if err := cfg.Validate(); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
+}
+
+func ApplyDefaults(cfg *Config) {
 	if cfg.AList.URL == "" {
 		cfg.AList.URL = "http://127.0.0.1:5244"
 	}
@@ -83,7 +103,6 @@ func LoadConfig(path string) (Config, error) {
 	if cfg.Rclone.Checkers == 0 {
 		cfg.Rclone.Checkers = 8
 	}
-	return cfg, nil
 }
 
 func (c Config) Validate() error {
@@ -136,7 +155,51 @@ func (c Config) Validate() error {
 }
 
 func (c Config) RcloneConfigPath() string {
-	return toNativePath(c.Rclone.ConfigFile)
+	return ToNativePath(c.Rclone.ConfigFile)
+}
+
+func (c Config) Clone() Config {
+	clone := c
+	clone.Rclone.Excludes = append([]string(nil), c.Rclone.Excludes...)
+	clone.Tasks = append([]Task(nil), c.Tasks...)
+	for i := range clone.Tasks {
+		clone.Tasks[i].Excludes = append([]string(nil), c.Tasks[i].Excludes...)
+	}
+	return clone
+}
+
+func Save(path string, cfg Config) error {
+	data, err := FormatYAML(cfg)
+	if err != nil {
+		return err
+	}
+	return SaveRaw(path, data)
+}
+
+func SaveRaw(path string, data []byte) error {
+	if _, err := ParseAndValidateYAML(data); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+func FormatYAML(cfg Config) ([]byte, error) {
+	ApplyDefaults(&cfg)
+	return yaml.Marshal(cfg)
+}
+
+func LoadText(path string) ([]byte, error) {
+	return os.ReadFile(path)
+}
+
+func TaskNames(cfg Config) []string {
+	names := make([]string, 0, len(cfg.Tasks))
+	for _, task := range cfg.Tasks {
+		if task.Name != "" {
+			names = append(names, task.Name)
+		}
+	}
+	return names
 }
 
 func SelectTasks(tasks []Task, selector string, all bool) ([]Task, error) {
@@ -160,18 +223,41 @@ func SelectTasks(tasks []Task, selector string, all bool) ([]Task, error) {
 	return nil, fmt.Errorf("task %q not found", selector)
 }
 
-func trimRemotePath(path string) string {
+func TrimRemotePath(path string) string {
 	return strings.TrimPrefix(strings.ReplaceAll(path, "\\", "/"), "/")
 }
 
-func toNativePath(path string) string {
+func ToNativePath(path string) string {
 	if runtime.GOOS == "windows" {
 		return filepath.FromSlash(path)
 	}
 	return path
 }
 
-func loadDotEnv(path string) error {
+func EnsureLocalDirs() error {
+	if err := os.MkdirAll(ToNativePath(LocalStateDir), 0o755); err != nil {
+		return err
+	}
+	return os.MkdirAll(ToNativePath(ToolsDir), 0o755)
+}
+
+func WriteSampleIfMissing(path string) (bool, error) {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		if err := os.WriteFile(path, []byte(Sample()), 0o644); err != nil {
+			return false, err
+		}
+		return true, nil
+	} else if err != nil {
+		return false, err
+	}
+	return false, nil
+}
+
+func Sample() string {
+	return sampleConfig
+}
+
+func LoadDotEnv(path string) error {
 	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -180,10 +266,10 @@ func loadDotEnv(path string) error {
 		return err
 	}
 	defer file.Close()
-	return parseDotEnv(file)
+	return ParseDotEnv(file)
 }
 
-func parseDotEnv(r io.Reader) error {
+func ParseDotEnv(r io.Reader) error {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())

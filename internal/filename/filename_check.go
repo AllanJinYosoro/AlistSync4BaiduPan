@@ -1,4 +1,4 @@
-package main
+package filename
 
 import (
 	"errors"
@@ -6,20 +6,22 @@ import (
 	"io/fs"
 	"path/filepath"
 	"strings"
+
+	"bdp-sync/internal/config"
 )
 
-const maxNameProblems = 20
+const MaxProblems = 20
 
-type nameProblem struct {
+type Problem struct {
 	Task string
 	Path string
 	Why  string
 }
 
-func findUnsupportedUploadNames(tasks []Task, limit int) ([]nameProblem, error) {
-	var problems []nameProblem
+func FindUnsupportedUploadNames(tasks []config.Task, limit int) ([]Problem, error) {
+	var problems []Problem
 	for _, task := range tasks {
-		root := toNativePath(task.Local)
+		root := config.ToNativePath(task.Local)
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -27,8 +29,8 @@ func findUnsupportedUploadNames(tasks []Task, limit int) ([]nameProblem, error) 
 			if d.IsDir() {
 				return nil
 			}
-			if why := unsupportedUploadNameReason(d.Name()); why != "" {
-				problems = append(problems, nameProblem{
+			if why := UnsupportedUploadNameReason(d.Name()); why != "" {
+				problems = append(problems, Problem{
 					Task: task.Name,
 					Path: path,
 					Why:  why,
@@ -52,14 +54,14 @@ func findUnsupportedUploadNames(tasks []Task, limit int) ([]nameProblem, error) 
 	return problems, nil
 }
 
-func unsupportedUploadNameReason(name string) string {
+func UnsupportedUploadNameReason(name string) string {
 	if strings.ContainsRune(name, '\uFF1A') {
 		return "contains fullwidth colon U+FF1A; Baidu Netdisk through AList WebDAV can reject it with HTTP 405"
 	}
 	return ""
 }
 
-func formatNameProblems(problems []nameProblem) string {
+func FormatProblems(problems []Problem) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "found %d file name(s) likely to fail on Baidu WebDAV upload:\n", len(problems))
 	for _, p := range problems {

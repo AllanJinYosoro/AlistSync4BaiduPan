@@ -8,17 +8,18 @@ This project does not run in the background, watch files, or schedule automatic 
 
 Run `bdp-sync.exe` without command-line arguments to open the desktop window. The GUI reads `config.yaml`, lets you choose one configured task or all tasks, and shows command output in the log area.
 
-Buttons:
+The window has three tabs:
 
-- `Doctor` validates dependencies, config, password, AList connectivity, rclone remote, and upload filename compatibility.
-- `Dry run` previews rclone changes without uploading or deleting files.
-- `Update` uploads new or changed local files with `rclone copy` and does not delete remote-only files.
-- `Sync` mirrors local folders to the remote with `rclone sync`; it may delete remote-only files after confirmation.
+- `Sync` keeps the existing task selector and `Doctor`, `Dry run`, `Update`, and `Sync` actions.
+- `Config` lets you edit common `config.yaml` fields through a form or edit the full YAML directly. Saves are validated before the file is overwritten.
+- `Dependencies` shows the detected `rclone` and `alist` paths, can install missing tools into `.alist-sync/tools`, and can copy a manually selected executable into the local tools directory.
+
+On startup, the GUI checks for `rclone` and `alist`. If either dependency is missing, it asks before downloading anything.
 
 Build a local Windows executable during development:
 
 ```powershell
-go build -o bdp-sync.exe .
+go build -o bdp-sync.exe ./cmd/bdp-sync
 ```
 
 For a packaged Fyne app, install the Fyne CLI and package for Windows:
@@ -27,6 +28,18 @@ For a packaged Fyne app, install the Fyne CLI and package for Windows:
 go install fyne.io/tools/cmd/fyne@latest
 fyne package -os windows
 ```
+
+## Project Layout
+
+Source code is organized by responsibility:
+
+- `cmd/bdp-sync` contains the executable entrypoint.
+- `internal/config` owns YAML parsing, defaults, validation, and saving.
+- `internal/deps`, `internal/alist`, `internal/rclone`, and `internal/filename` own reusable tool, service, transfer, and preflight checks.
+- `internal/runner` implements the CLI command flow.
+- `internal/gui` implements the Fyne desktop UI.
+
+Runtime state stays outside source packages: `.alist-sync/` stores local tools and rclone config, while `data/` is AList runtime data.
 
 ## Commands
 

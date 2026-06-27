@@ -1,4 +1,4 @@
-package main
+package deps
 
 import (
 	"archive/tar"
@@ -16,15 +16,68 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"bdp-sync/internal/config"
 )
 
-func ensureTool(name string, force bool, w io.Writer) error {
+type ToolStatus struct {
+	Name      string
+	Path      string
+	Available bool
+	Source    string
+	Detail    string
+}
+
+type Status struct {
+	Tools []ToolStatus
+}
+
+func (s Status) Missing() []ToolStatus {
+	var missing []ToolStatus
+	for _, tool := range s.Tools {
+		if !tool.Available {
+			missing = append(missing, tool)
+		}
+	}
+	return missing
+}
+
+func (s Status) Ready() bool {
+	return len(s.Missing()) == 0
+}
+
+func Check() Status {
+	return Status{Tools: []ToolStatus{CheckTool("rclone"), CheckTool("alist")}}
+}
+
+func CheckTool(name string) ToolStatus {
+	if p, err := exec.LookPath(ExeName(name)); err == nil {
+		return ToolStatus{Name: name, Path: p, Available: true, Source: "PATH"}
+	}
+	local := LocalToolPath(name)
+	if FileExists(local) {
+		return ToolStatus{Name: name, Path: local, Available: true, Source: "local"}
+	}
+	return ToolStatus{Name: name, Available: false, Detail: fmt.Sprintf("%s not found", name)}
+}
+
+func EnsureAll(force bool, w io.Writer) error {
+	if err := config.EnsureLocalDirs(); err != nil {
+		return err
+	}
+	if err := EnsureTool("rclone", force, w); err != nil {
+		return err
+	}
+	return EnsureTool("alist", force, w)
+}
+
+func EnsureTool(name string, force bool, w io.Writer) error {
 	if !force {
-		if p, err := exec.LookPath(exeName(name)); err == nil {
+		if p, err := exec.LookPath(ExeName(name)); err == nil {
 			fmt.Fprintf(w, "%s found in PATH: %s\n", name, p)
 			return nil
 		}
-		if p := localToolPath(name); fileExists(p) {
+		if p := LocalToolPath(name); FileExists(p) {
 			fmt.Fprintf(w, "%s found locally: %s\n", name, p)
 			return nil
 		}
@@ -32,29 +85,29 @@ func ensureTool(name string, force bool, w io.Writer) error {
 	fmt.Fprintf(w, "downloading %s...\n", name)
 	switch name {
 	case "rclone":
-		return downloadRclone(localToolPath(name))
+		return downloadRclone(LocalToolPath(name))
 	case "alist":
-		return downloadAList(localToolPath(name))
+		return downloadAList(LocalToolPath(name))
 	default:
 		return fmt.Errorf("unknown tool %q", name)
 	}
 }
 
-func findTool(name string) (string, error) {
-	if p, err := exec.LookPath(exeName(name)); err == nil {
+func FindTool(name string) (string, error) {
+	if p, err := exec.LookPath(ExeName(name)); err == nil {
 		return p, nil
 	}
-	if p := localToolPath(name); fileExists(p) {
+	if p := LocalToolPath(name); FileExists(p) {
 		return p, nil
 	}
 	return "", fmt.Errorf("%s not found; run `bdp-sync setup deps` first", name)
 }
 
-func localToolPath(name string) string {
-	return filepath.Join(toNativePath(toolsDir), exeName(name))
+func LocalToolPath(name string) string {
+	return filepath.Join(config.ToNativePath(config.ToolsDir), ExeName(name))
 }
 
-func exeName(name string) string {
+func ExeName(name string) string {
 	if runtime.GOOS == "windows" {
 		return name + ".exe"
 	}
@@ -66,13 +119,12 @@ func downloadRclone(dest string) error {
 	if goos == "darwin" {
 		goos = "osx"
 	}
-	arch := runtime.GOARCH
-	url := fmt.Sprintf("https://downloads.rclone.org/rclone-current-%s-%s.zip", goos, arch)
+	url := fmt.Sprintf("https://downloads.rclone.org/rclone-current-%s-%s.zip", goos, runtime.GOARCH)
 	data, err := download(url)
 	if err != nil {
 		return err
 	}
-	return extractExecutableFromZip(data, exeName("rclone"), dest)
+	return extractExecutableFromZip(data, ExeName("rclone"), dest)
 }
 
 func downloadAList(dest string) error {
@@ -107,9 +159,9 @@ func downloadAList(dest string) error {
 		return err
 	}
 	if strings.HasSuffix(strings.ToLower(chosen), ".zip") {
-		return extractExecutableFromZip(archive, exeName("alist"), dest)
+		return extractExecutableFromZip(archive, ExeName("alist"), dest)
 	}
-	return extractExecutableFromTarGz(archive, exeName("alist"), dest)
+	return extractExecutableFromTarGz(archive, ExeName("alist"), dest)
 }
 
 func download(rawurl string) ([]byte, error) {
@@ -179,20 +231,7 @@ func writeExecutable(r io.Reader, dest string) error {
 	return err
 }
 
-func runOutput(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
-}
-
-func errString(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
-}
-
-func fileExists(path string) bool {
+func FileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }

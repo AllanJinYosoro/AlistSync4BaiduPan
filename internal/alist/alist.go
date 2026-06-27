@@ -1,44 +1,49 @@
-package main
+package alist
 
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"bdp-sync/internal/config"
 )
 
-func (r Runner) ensureAListReady(cfg Config) error {
-	if isAListReachable(cfg.AList.URL) {
-		fmt.Fprintln(r.stdout, "AList is reachable:", strings.TrimRight(cfg.AList.URL, "/"))
+type Starter func(name string, args ...string) error
+
+func EnsureReady(cfg config.Config, start Starter, stdout io.Writer) error {
+	if IsReachable(cfg.AList.URL) {
+		fmt.Fprintln(stdout, "AList is reachable:", strings.TrimRight(cfg.AList.URL, "/"))
 		return nil
 	}
 	if strings.TrimSpace(cfg.AList.ServerCommand) == "" {
 		return fmt.Errorf("AList is not reachable at %s and alist.server_command is not configured", cfg.AList.URL)
 	}
 
-	command, args, err := splitCommand(cfg.AList.ServerCommand)
+	command, args, err := SplitCommand(cfg.AList.ServerCommand)
 	if err != nil {
 		return fmt.Errorf("invalid alist.server_command: %w", err)
 	}
-	if r.start == nil {
-		r.start = startBackgroundProcess
+	if start == nil {
+		start = StartBackgroundProcess
 	}
-	fmt.Fprintln(r.stdout, "AList is not reachable; starting:", cfg.AList.ServerCommand)
-	if err := r.start(command, args...); err != nil {
+	fmt.Fprintln(stdout, "AList is not reachable; starting:", cfg.AList.ServerCommand)
+	if err := start(command, args...); err != nil {
 		return fmt.Errorf("start AList failed: %w", err)
 	}
 	timeout := time.Duration(cfg.AList.StartupTimeoutSeconds) * time.Second
-	if err := waitForAList(cfg.AList.URL, timeout); err != nil {
+	if err := Wait(cfg.AList.URL, timeout); err != nil {
 		return err
 	}
-	fmt.Fprintln(r.stdout, "AList is ready:", strings.TrimRight(cfg.AList.URL, "/"))
+	fmt.Fprintln(stdout, "AList is ready:", strings.TrimRight(cfg.AList.URL, "/"))
 	return nil
 }
 
-func isAListReachable(rawURL string) bool {
+func IsReachable(rawURL string) bool {
 	client := http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(strings.TrimRight(rawURL, "/"))
 	if err != nil {
@@ -48,10 +53,10 @@ func isAListReachable(rawURL string) bool {
 	return resp.StatusCode < 500
 }
 
-func waitForAList(rawURL string, timeout time.Duration) error {
+func Wait(rawURL string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for {
-		if isAListReachable(rawURL) {
+		if IsReachable(rawURL) {
 			return nil
 		}
 		if timeout == 0 || time.Now().After(deadline) {
@@ -61,7 +66,7 @@ func waitForAList(rawURL string, timeout time.Duration) error {
 	}
 }
 
-func splitCommand(command string) (string, []string, error) {
+func SplitCommand(command string) (string, []string, error) {
 	var parts []string
 	var current strings.Builder
 	var quote rune
@@ -99,7 +104,7 @@ func splitCommand(command string) (string, []string, error) {
 	return parts[0], parts[1:], nil
 }
 
-func startBackgroundProcess(name string, args ...string) error {
+func StartBackgroundProcess(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

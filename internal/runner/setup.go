@@ -1,4 +1,4 @@
-package main
+package runner
 
 import (
 	"errors"
@@ -6,36 +6,35 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"bdp-sync/internal/config"
+	"bdp-sync/internal/deps"
 )
 
 func (r Runner) cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(r.stderr)
-	configPath := fs.String("config", defaultConfigPath, "config file path")
+	configPath := fs.String("config", config.DefaultPath, "config file path")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	if err := os.MkdirAll(toNativePath(localStateDir), 0o755); err != nil {
+	if err := config.EnsureLocalDirs(); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(toNativePath(toolsDir), 0o755); err != nil {
+	created, err := config.WriteSampleIfMissing(*configPath)
+	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(*configPath); errors.Is(err, os.ErrNotExist) {
-		if err := os.WriteFile(*configPath, []byte(sampleConfig), 0o644); err != nil {
-			return err
-		}
+	if created {
 		fmt.Fprintln(r.stdout, "created", *configPath)
-	} else if err != nil {
-		return err
 	} else {
 		fmt.Fprintln(r.stdout, "kept existing", *configPath)
 	}
 	if err := ensureGitignore(); err != nil {
 		return err
 	}
-	fmt.Fprintln(r.stdout, "created local state directory", localStateDir)
+	fmt.Fprintln(r.stdout, "created local state directory", config.LocalStateDir)
 	return nil
 }
 
@@ -58,16 +57,7 @@ func (r Runner) cmdSetupDeps(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(toNativePath(toolsDir), 0o755); err != nil {
-		return err
-	}
-	if err := ensureTool("rclone", *force, r.stdout); err != nil {
-		return err
-	}
-	if err := ensureTool("alist", *force, r.stdout); err != nil {
-		return err
-	}
-	return nil
+	return deps.EnsureAll(*force, r.stdout)
 }
 
 func ensureGitignore() error {

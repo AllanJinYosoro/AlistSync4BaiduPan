@@ -1,14 +1,21 @@
-package main
+package runner
 
 import (
 	"flag"
 	"fmt"
+	"os/exec"
+
+	"bdp-sync/internal/alist"
+	"bdp-sync/internal/config"
+	"bdp-sync/internal/deps"
+	"bdp-sync/internal/filename"
+	"bdp-sync/internal/rclone"
 )
 
 func (r Runner) cmdTransfer(mode string, args []string) error {
 	fs := flag.NewFlagSet(mode, flag.ContinueOnError)
 	fs.SetOutput(r.stderr)
-	configPath := fs.String("config", defaultConfigPath, "config file path")
+	configPath := fs.String("config", config.DefaultPath, "config file path")
 	all := fs.Bool("all", false, "run all tasks")
 	fs.Bool("yes", false, "accepted for backward compatibility; sync runs by default")
 	if err := fs.Parse(args); err != nil {
@@ -18,40 +25,49 @@ func (r Runner) cmdTransfer(mode string, args []string) error {
 	if err != nil {
 		return err
 	}
-	cfg, err := LoadConfig(*configPath)
+	cfg, err := config.Load(*configPath)
 	if err != nil {
 		return err
 	}
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
-	tasks, err := SelectTasks(cfg.Tasks, selector, *all)
+	tasks, err := config.SelectTasks(cfg.Tasks, selector, *all)
 	if err != nil {
 		return err
 	}
-	if problems, err := findUnsupportedUploadNames(tasks, maxNameProblems); err != nil {
+	if problems, err := filename.FindUnsupportedUploadNames(tasks, filename.MaxProblems); err != nil {
 		return err
 	} else if len(problems) > 0 {
-		return fmt.Errorf("%s", formatNameProblems(problems))
+		return fmt.Errorf("%s", filename.FormatProblems(problems))
 	}
-	if err := r.ensureAListReady(cfg); err != nil {
+	if err := alist.EnsureReady(cfg, r.start, r.stdout); err != nil {
 		return err
 	}
-	if err := r.ensureRcloneConfig(cfg); err != nil {
+	if err := rclone.EnsureConfig(cfg, r.runOutput, r.stdout); err != nil {
 		return err
 	}
-	rclonePath, err := findTool("rclone")
+	rclonePath, err := deps.FindTool("rclone")
 	if err != nil {
 		return err
 	}
 	for _, task := range tasks {
-		args := BuildRcloneArgs(mode, cfg, task)
-		fmt.Fprintf(r.stdout, "\n==> %s: %s -> %s:%s\n", task.Name, task.Local, cfg.Rclone.Remote, trimRemotePath(task.Remote))
+		args := rclone.BuildArgs(mode, cfg, task)
+		fmt.Fprintf(r.stdout, "\n==> %s: %s -> %s:%s\n", task.Name, task.Local, cfg.Rclone.Remote, config.TrimRemotePath(task.Remote))
 		if err := r.exec(rclonePath, args...); err != nil {
 			return fmt.Errorf("%s failed for task %s: %w", mode, task.Name, err)
 		}
 	}
 	return nil
+}
+
+func (r Runner) runOutput(name string, args ...string) (string, error) {
+	if r.output != nil {
+		return r.output(name, args...)
+	}
+	cmd := exec.Command(name, args...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
 }
 
 func transferSelector(args []string) (string, error) {
