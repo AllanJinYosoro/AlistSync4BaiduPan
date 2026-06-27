@@ -1,4 +1,4 @@
-module alist-sync
+module bdp-sync
 
 go 1.22
 

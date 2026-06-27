@@ -47,7 +47,7 @@ func findTool(name string) (string, error) {
 	if p := localToolPath(name); fileExists(p) {
 		return p, nil
 	}
-	return "", fmt.Errorf("%s not found; run `alist-sync setup deps` first", name)
+	return "", fmt.Errorf("%s not found; run `bdp-sync setup deps` first", name)
 }
 
 func localToolPath(name string) string {

@@ -37,15 +37,15 @@ func (r Runner) Run(args []string) error {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprint(w, `alist-sync - AList + rclone backup sync for Baidu Netdisk
+	fmt.Fprint(w, `bdp-sync - AList + rclone backup sync for Baidu Netdisk
 
 Usage:
-  alist-sync init
-  alist-sync setup deps
-  alist-sync doctor
-  alist-sync dry-run [task|--all]
-  alist-sync update [task|--all]
-  alist-sync sync [task|--all]
+  bdp-sync init
+  bdp-sync setup deps
+  bdp-sync doctor
+  bdp-sync dry-run [task|--all]
+  bdp-sync update [task|--all]
+  bdp-sync sync [task|--all]
 
 Global flags:
   --config PATH     Config file path, defaults to config.yaml

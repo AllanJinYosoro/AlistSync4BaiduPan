@@ -15,8 +15,8 @@ import (
 )
 
 func runGUI() {
-	a := app.NewWithID("alist-sync")
-	w := a.NewWindow("AList Sync")
+	a := app.NewWithID("bdp-sync")
+	w := a.NewWindow("bdp-sync")
 	w.Resize(fyne.NewSize(920, 620))
 
 	configPath := widget.NewEntry()
@@ -92,7 +92,7 @@ func runGUI() {
 
 		setRunning(true)
 		status.SetText("Running " + action + "...")
-		log.Append("\n$ alist-sync " + strings.Join(args, " ") + "\n")
+		log.Append("\n$ bdp-sync " + strings.Join(args, " ") + "\n")
 
 		go func() {
 			runner := NewRunner(log, log)

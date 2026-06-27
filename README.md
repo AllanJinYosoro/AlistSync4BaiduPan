@@ -1,4 +1,4 @@
-﻿# AListSync4BaiduPan
+﻿# bdp-sync
 
 A backup/sync CLI for sending local folders to Baidu Netdisk through AList WebDAV and rclone.
 
@@ -6,7 +6,7 @@ This project does not run in the background, watch files, or schedule automatic 
 
 ## Windows GUI
 
-Run `alist-sync.exe` without command-line arguments to open the desktop window. The GUI reads `config.yaml`, lets you choose one configured task or all tasks, and shows command output in the log area.
+Run `bdp-sync.exe` without command-line arguments to open the desktop window. The GUI reads `config.yaml`, lets you choose one configured task or all tasks, and shows command output in the log area.
 
 Buttons:
 
@@ -18,7 +18,7 @@ Buttons:
 Build a local Windows executable during development:
 
 ```powershell
-go build -o alist-sync.exe .
+go build -o bdp-sync.exe .
 ```
 
 For a packaged Fyne app, install the Fyne CLI and package for Windows:
@@ -33,12 +33,12 @@ fyne package -os windows
 Passing any command-line argument keeps the CLI behavior:
 
 ```powershell
-alist-sync init
-alist-sync setup deps
-alist-sync doctor
-alist-sync dry-run documents
-alist-sync update documents
-alist-sync sync documents
+bdp-sync init
+bdp-sync setup deps
+bdp-sync doctor
+bdp-sync dry-run documents
+bdp-sync update documents
+bdp-sync sync documents
 ```
 - `init` creates a default `config.yaml` template in the project directory, so you can run through the setup flow before syncing.
 - `setup deps` checks and installs dependencies needed by this toolchain (including `rclone` and `alist` helpers).
@@ -51,7 +51,7 @@ alist-sync sync documents
 
 ## Configuration
 
-Run `alist-sync init` to create `config.yaml`:
+Run `bdp-sync init` to create `config.yaml`:
 
 ```yaml
 alist:
@@ -97,18 +97,18 @@ ALIST_PASSWORD=your_alist_password
 
 ## Setup Notes
 
-1. Run `alist-sync setup deps` to reuse or download `rclone` and `alist`.
+1. Run `bdp-sync setup deps` to reuse or download `rclone` and `alist`.
 2. In AList, mount Baidu Netdisk with your own Baidu account.
 3. Enable WebDAV permissions for the AList user used by this CLI.
 4. Set the environment variable named by `alist.password_env`.
-5. Run `alist-sync doctor`.
-6. Run `alist-sync update documents` or `alist-sync sync documents`.
+5. Run `bdp-sync doctor`.
+6. Run `bdp-sync update documents` or `bdp-sync sync documents`.
 
 The `.alist-sync/rclone.conf` file is maintained automatically by `dry-run`, `update`, and `sync`.
 
 ## Installing AList
 
-This CLI needs a configured AList data directory and storage. `alist-sync setup deps` can download an `alist` binary, but it does not configure your AList storage and does not start AList during dependency setup.
+This CLI needs a configured AList data directory and storage. `bdp-sync setup deps` can download an `alist` binary, but it does not configure your AList storage and does not start AList during dependency setup.
 
 ### Windows manual install
 
