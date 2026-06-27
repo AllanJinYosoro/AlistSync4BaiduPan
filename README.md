@@ -4,7 +4,33 @@ A backup/sync CLI for sending local folders to Baidu Netdisk through AList WebDA
 
 This project does not run in the background, watch files, or schedule automatic jobs. Nothing is uploaded or deleted until you run a command.
 
+## Windows GUI
+
+Run `alist-sync.exe` without command-line arguments to open the desktop window. The GUI reads `config.yaml`, lets you choose one configured task or all tasks, and shows command output in the log area.
+
+Buttons:
+
+- `Doctor` validates dependencies, config, password, AList connectivity, rclone remote, and upload filename compatibility.
+- `Dry run` previews rclone changes without uploading or deleting files.
+- `Update` uploads new or changed local files with `rclone copy` and does not delete remote-only files.
+- `Sync` mirrors local folders to the remote with `rclone sync`; it may delete remote-only files after confirmation.
+
+Build a local Windows executable during development:
+
+```powershell
+go build -o alist-sync.exe .
+```
+
+For a packaged Fyne app, install the Fyne CLI and package for Windows:
+
+```powershell
+go install fyne.io/tools/cmd/fyne@latest
+fyne package -os windows
+```
+
 ## Commands
+
+Passing any command-line argument keeps the CLI behavior:
 
 ```powershell
 alist-sync init
