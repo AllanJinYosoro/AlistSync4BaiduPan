@@ -75,3 +75,41 @@ func TestGUICommandArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestTerminalLogBufferOverwritesCarriageReturnProgress(t *testing.T) {
+	var b terminalLogBuffer
+	got := b.Append("start\nTransferred: 1 MiB / 10 MiB\rTransferred: 5 MiB / 10 MiB\rTransferred: 10 MiB / 10 MiB\nfinished\n")
+	want := "start\nTransferred: 10 MiB / 10 MiB\nfinished\n"
+	if got != want {
+		t.Fatalf("terminal log mismatch\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestTerminalLogBufferPreservesCRLFAndStripsANSI(t *testing.T) {
+	var b terminalLogBuffer
+	got := b.Append("one\r\n\x1b[32mtwo\x1b[0m\rthree\n")
+	want := "one\nthree\n"
+	if got != want {
+		t.Fatalf("terminal log mismatch\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestTerminalLogBufferHandlesSplitCarriageReturn(t *testing.T) {
+	var b terminalLogBuffer
+	if got := b.Append("Transferred: 1 MiB\r"); got != "Transferred: 1 MiB" {
+		t.Fatalf("unexpected first chunk: %q", got)
+	}
+	got := b.Append("Transferred: 2 MiB\n")
+	want := "Transferred: 2 MiB\n"
+	if got != want {
+		t.Fatalf("terminal log mismatch\n got: %q\nwant: %q", got, want)
+	}
+
+	b.Clear()
+	b.Append("line\r")
+	got = b.Append("\n")
+	want = "line\n"
+	if got != want {
+		t.Fatalf("CRLF split mismatch\n got: %q\nwant: %q", got, want)
+	}
+}

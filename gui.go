@@ -24,10 +24,8 @@ func runGUI() {
 	configPath.SetPlaceHolder("config.yaml")
 
 	status := widget.NewLabel("Ready")
-	logOutput := widget.NewMultiLineEntry()
-	logOutput.Wrapping = fyne.TextWrapWord
-	logOutput.SetPlaceHolder("Command output will appear here.")
-	logOutput.Disable()
+	logOutput := widget.NewTextGrid()
+	logOutput.SetText("Command output will appear here.")
 	log := &guiLogWriter{entry: logOutput}
 
 	taskSelect := widget.NewSelect(nil, nil)
@@ -127,7 +125,8 @@ func runGUI() {
 	configRow := container.NewBorder(nil, nil, widget.NewLabel("Config"), refreshButton, configPath)
 	taskRow := container.NewHBox(taskSelect, allTasks, doctorButton, dryRunButton, updateButton, syncButton, clearButton)
 	header := container.NewVBox(configRow, taskRow, status)
-	content := container.NewBorder(header, nil, nil, nil, logOutput)
+	logScroll := container.NewScroll(logOutput)
+	content := container.NewBorder(header, nil, nil, nil, logScroll)
 
 	w.SetContent(content)
 	loadConfig()
@@ -135,9 +134,9 @@ func runGUI() {
 }
 
 type guiLogWriter struct {
-	mu    sync.Mutex
-	entry *widget.Entry
-	text  string
+	mu     sync.Mutex
+	entry  *widget.TextGrid
+	buffer terminalLogBuffer
 }
 
 func (w *guiLogWriter) Write(p []byte) (int, error) {
@@ -147,8 +146,7 @@ func (w *guiLogWriter) Write(p []byte) (int, error) {
 
 func (w *guiLogWriter) Append(text string) {
 	w.mu.Lock()
-	w.text += text
-	current := w.text
+	current := w.buffer.Append(text)
 	w.mu.Unlock()
 	fyne.Do(func() {
 		w.entry.SetText(current)
@@ -157,7 +155,7 @@ func (w *guiLogWriter) Append(text string) {
 
 func (w *guiLogWriter) Clear() {
 	w.mu.Lock()
-	w.text = ""
+	w.buffer.Clear()
 	w.mu.Unlock()
 	w.entry.SetText("")
 }
