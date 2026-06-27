@@ -7,11 +7,12 @@ import (
 )
 
 type Runner struct {
-	stdout io.Writer
-	stderr io.Writer
-	exec   func(name string, args ...string) error
-	start  func(name string, args ...string) error
-	output func(name string, args ...string) (string, error)
+	stdout       io.Writer
+	stderr       io.Writer
+	exec         func(name string, args ...string) error
+	start        func(name string, args ...string) error
+	startManaged func(name string, args ...string) (func() error, error)
+	output       func(name string, args ...string) (string, error)
 }
 
 func New(stdout, stderr io.Writer) Runner {
@@ -33,6 +34,7 @@ func New(stdout, stderr io.Writer) Runner {
 			}
 			return cmd.Process.Release()
 		},
+		startManaged: nil,
 		output: func(name string, args ...string) (string, error) {
 			cmd := exec.Command(name, args...)
 			cmd.Stderr = stderr

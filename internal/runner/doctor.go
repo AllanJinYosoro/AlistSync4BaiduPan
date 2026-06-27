@@ -10,9 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"bdp-sync/internal/alist"
 	"bdp-sync/internal/config"
 	"bdp-sync/internal/deps"
 	"bdp-sync/internal/filename"
+	"bdp-sync/internal/rclone"
 )
 
 func (r Runner) cmdDoctor(args []string) error {
@@ -36,9 +38,10 @@ func (r Runner) cmdDoctor(args []string) error {
 		validateErr := cfg.Validate()
 		checks = append(checks, doctorCheck{"config", validateErr == nil, errString(validateErr)})
 		checks = append(checks, checkPasswordEnv(cfg))
-		checks = append(checks, checkAListURL(cfg))
-		checks = append(checks, checkRcloneRemote(cfg))
 		checks = append(checks, checkUploadNames(cfg))
+		if validateErr == nil {
+			checks = append(checks, r.checkLiveServices(cfg)...)
+		}
 	}
 
 	failed := false
@@ -52,6 +55,35 @@ func (r Runner) cmdDoctor(args []string) error {
 	}
 	if failed {
 		return errors.New("doctor found problems")
+	}
+	return nil
+}
+
+func (r Runner) checkLiveServices(cfg config.Config) []doctorCheck {
+	var checks []doctorCheck
+	stop, err := alist.EnsureReadyManaged(cfg, r.managedStarter(), r.stdout)
+	if err != nil {
+		checks = append(checks, doctorCheck{"alist.url", false, err.Error()})
+		checks = append(checks, doctorCheck{"rclone config", false, "skipped because AList is not reachable"})
+		checks = append(checks, doctorCheck{"rclone remote", false, "skipped because AList is not reachable"})
+		return checks
+	}
+	checks = append(checks, checkAListURL(cfg))
+	checks = append(checks, r.checkRcloneConfig(cfg))
+	checks = append(checks, r.checkRcloneRemote(cfg))
+	if stop != nil {
+		if err := stop(); err != nil {
+			checks = append(checks, doctorCheck{"alist shutdown", false, err.Error()})
+		} else {
+			checks = append(checks, doctorCheck{"alist shutdown", true, ""})
+		}
+	}
+	return checks
+}
+
+func (r Runner) managedStarter() alist.ManagedStarter {
+	if r.startManaged != nil {
+		return r.startManaged
 	}
 	return nil
 }
@@ -94,12 +126,17 @@ func checkAListURL(cfg config.Config) doctorCheck {
 	return doctorCheck{name: "alist.url", ok: resp.StatusCode < 500, detail: resp.Status}
 }
 
-func checkRcloneRemote(cfg config.Config) doctorCheck {
+func (r Runner) checkRcloneConfig(cfg config.Config) doctorCheck {
+	err := rclone.EnsureConfig(cfg, r.runOutput, r.stdout)
+	return doctorCheck{name: "rclone config", ok: err == nil, detail: errString(err)}
+}
+
+func (r Runner) checkRcloneRemote(cfg config.Config) doctorCheck {
 	rclonePath, err := deps.FindTool("rclone")
 	if err != nil {
 		return doctorCheck{name: "rclone remote", ok: false, detail: err.Error()}
 	}
-	err = exec.Command(rclonePath, "lsd", cfg.Rclone.Remote+":", "--config", cfg.RcloneConfigPath()).Run()
+	err = r.exec(rclonePath, "lsd", cfg.Rclone.Remote+":", "--config", cfg.RcloneConfigPath())
 	return doctorCheck{name: "rclone remote", ok: err == nil, detail: errString(err)}
 }
 

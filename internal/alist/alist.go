@@ -14,6 +14,7 @@ import (
 )
 
 type Starter func(name string, args ...string) error
+type ManagedStarter func(name string, args ...string) (func() error, error)
 
 func EnsureReady(cfg config.Config, start Starter, stdout io.Writer) error {
 	if IsReachable(cfg.AList.URL) {
@@ -41,6 +42,38 @@ func EnsureReady(cfg config.Config, start Starter, stdout io.Writer) error {
 	}
 	fmt.Fprintln(stdout, "AList is ready:", strings.TrimRight(cfg.AList.URL, "/"))
 	return nil
+}
+
+func EnsureReadyManaged(cfg config.Config, start ManagedStarter, stdout io.Writer) (func() error, error) {
+	if IsReachable(cfg.AList.URL) {
+		fmt.Fprintln(stdout, "AList is reachable:", strings.TrimRight(cfg.AList.URL, "/"))
+		return nil, nil
+	}
+	if strings.TrimSpace(cfg.AList.ServerCommand) == "" {
+		return nil, fmt.Errorf("AList is not reachable at %s and alist.server_command is not configured", cfg.AList.URL)
+	}
+
+	command, args, err := SplitCommand(cfg.AList.ServerCommand)
+	if err != nil {
+		return nil, fmt.Errorf("invalid alist.server_command: %w", err)
+	}
+	if start == nil {
+		start = StartManagedProcess
+	}
+	fmt.Fprintln(stdout, "AList is not reachable; starting for doctor:", cfg.AList.ServerCommand)
+	stop, err := start(command, args...)
+	if err != nil {
+		return nil, fmt.Errorf("start AList failed: %w", err)
+	}
+	timeout := time.Duration(cfg.AList.StartupTimeoutSeconds) * time.Second
+	if err := Wait(cfg.AList.URL, timeout); err != nil {
+		if stop != nil {
+			_ = stop()
+		}
+		return nil, err
+	}
+	fmt.Fprintln(stdout, "AList is ready:", strings.TrimRight(cfg.AList.URL, "/"))
+	return stop, nil
 }
 
 func IsReachable(rawURL string) bool {
@@ -112,4 +145,29 @@ func StartBackgroundProcess(name string, args ...string) error {
 		return err
 	}
 	return cmd.Process.Release()
+}
+
+func StartManagedProcess(name string, args ...string) (func() error, error) {
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	return func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		if err := cmd.Process.Kill(); err != nil {
+			return err
+		}
+		if err := cmd.Wait(); err != nil {
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
+				return nil
+			}
+			return err
+		}
+		return nil
+	}, nil
 }

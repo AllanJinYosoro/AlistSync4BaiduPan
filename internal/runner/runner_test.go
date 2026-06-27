@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -244,6 +245,95 @@ func TestDependencyStatusFindsLocalTool(t *testing.T) {
 	}
 }
 
+func TestDoctorStartsAListRefreshesRcloneConfigAndStops(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWD)
+	if err := os.MkdirAll(filepath.Join(".alist-sync", "tools"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range []string{"rclone", "alist"} {
+		if err := os.WriteFile(filepath.Join(".alist-sync", "tools", deps.ExeName(tool)), []byte("fake"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var ready atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ready.Load() {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	localDir := filepath.ToSlash(t.TempDir())
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`alist:
+  url: "`+server.URL+`"
+  username: "admin"
+  server_command: '"C:\alist\alist.exe" server'
+  startup_timeout_seconds: 1
+rclone:
+  remote: "alist_baidu"
+  config_file: ".alist-sync/rclone.conf"
+tasks:
+  - name: "documents"
+    local: "`+localDir+`"
+    remote: "/backup"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ALIST_PASSWORD", "secret")
+
+	var started [][]string
+	stopped := false
+	var calls [][]string
+	r := Runner{
+		stdout: io.Discard,
+		stderr: io.Discard,
+		output: func(name string, args ...string) (string, error) {
+			return "obscured-secret", nil
+		},
+		startManaged: func(name string, args ...string) (func() error, error) {
+			started = append(started, append([]string{name}, args...))
+			ready.Store(true)
+			return func() error {
+				stopped = true
+				return nil
+			}, nil
+		},
+		exec: func(name string, args ...string) error {
+			calls = append(calls, append([]string{name}, args...))
+			return nil
+		},
+	}
+	if err := r.cmdDoctor([]string{"--config", cfgPath}); err != nil {
+		t.Fatalf("doctor failed: %v", err)
+	}
+	if len(started) != 1 {
+		t.Fatalf("expected AList to start once, got %#v", started)
+	}
+	if started[0][0] != `C:\alist\alist.exe` || started[0][1] != "server" {
+		t.Fatalf("unexpected start command: %#v", started)
+	}
+	if !stopped {
+		t.Fatal("expected doctor to stop the AList process it started")
+	}
+	if len(calls) != 1 || calls[0][1] != "lsd" || calls[0][2] != "alist_baidu:" {
+		t.Fatalf("expected one rclone lsd call, got %#v", calls)
+	}
+	if _, err := os.Stat(filepath.Join(".alist-sync", "rclone.conf")); err != nil {
+		t.Fatalf("expected doctor to refresh rclone config: %v", err)
+	}
+}
 func TestSyncWithoutYesRunsSync(t *testing.T) {
 	dir := t.TempDir()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
