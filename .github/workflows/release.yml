@@ -1,0 +1,68 @@
+name: Build Windows EXE
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "V*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows amd64 exe
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up MSYS2 build tools
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-binutils
+
+      - name: Add MSYS2 tools to PATH
+        shell: pwsh
+        run: echo "C:\msys64\ucrt64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Generate Windows icon resource
+        shell: pwsh
+        run: |
+          cd cmd/bdp-sync
+          windres -O coff -F pe-x86-64 -i bdp-sync.rc -o rsrc_windows_amd64.syso
+
+      - name: Build GUI exe
+        shell: pwsh
+        env:
+          CGO_ENABLED: "1"
+          GOOS: windows
+          GOARCH: amd64
+          CC: gcc
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          go build -buildvcs=false -ldflags "-H=windowsgui" -o dist/bdp-sync.exe ./cmd/bdp-sync
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bdp-sync-windows-amd64
+          path: dist/bdp-sync.exe
+
+      - name: Attach exe to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/bdp-sync.exe

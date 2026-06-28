@@ -39,6 +39,16 @@ bdp-sync.exe update --config config.yaml documents
 go build -ldflags "-H=windowsgui" -o bdp-sync.exe ./cmd/bdp-sync
 ```
 
+exe 图标由 `assets/app-icon.ico` 生成并嵌入。修改图标后，先重新生成 Windows 资源文件：
+
+```powershell
+cd cmd/bdp-sync
+windres -O coff -F pe-x86-64 -i bdp-sync.rc -o rsrc_windows_amd64.syso
+cd ../..
+```
+
+然后再执行上面的 `go build`。
+
 如果需要保留终端输出，可以另外构建 CLI 调试版本：
 
 ```powershell
