@@ -163,3 +163,39 @@ func TestTerminalLogBufferHandlesSplitCarriageReturn(t *testing.T) {
 		t.Fatalf("CRLF split mismatch\n got: %q\nwant: %q", got, want)
 	}
 }
+
+func TestTerminalLogBufferOverwritesANSIProgressBlock(t *testing.T) {
+	var b terminalLogBuffer
+	got := b.Append("start\nErrors: 0\nChecks: 1\nTransferred: 1 MiB\n\x1b[3AErrors: 0\nChecks: 2\nTransferred: 2 MiB\nfinished\n")
+	want := "start\nErrors: 0\nChecks: 2\nTransferred: 2 MiB\nfinished\n"
+	if got != want {
+		t.Fatalf("terminal log mismatch\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestTerminalLogBufferClearsCurrentLine(t *testing.T) {
+	var b terminalLogBuffer
+	got := b.Append("start\nTransferred: old\r\x1b[KTransferred: new\n")
+	want := "start\nTransferred: new\n"
+	if got != want {
+		t.Fatalf("terminal log mismatch\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestTerminalLogBufferCollapsesRcloneProgressBlocksWithoutControlCodes(t *testing.T) {
+	var b terminalLogBuffer
+	got := b.Append("start\nTransferred:\n    1 MiB / 10 MiB, 10%, 1 MiB/s, ETA 9s\nChecks:\n    1 / 10, 10%\nChecking:\n * a.txt: checking\nTransferred:\n    2 MiB / 10 MiB, 20%, 1 MiB/s, ETA 8s\nChecks:\n    2 / 10, 20%\nChecking:\n * b.txt: checking\nfinished\n")
+	want := "start\nTransferred:\n    2 MiB / 10 MiB, 20%, 1 MiB/s, ETA 8s\nChecks:\n    2 / 10, 20%\nChecking:\n * b.txt: checking\nfinished\n"
+	if got != want {
+		t.Fatalf("terminal log mismatch\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestTerminalLogBufferKeepsSingleRcloneStatsBlockFieldsTogether(t *testing.T) {
+	var b terminalLogBuffer
+	got := b.Append("Errors:\n    1 (retrying may help)\nChecks:\n    1 / 2, 50%\nTransferred:\n    1 MiB / 2 MiB, 50%, 1 MiB/s, ETA 1s\nChecking:\n * a.txt: checking\nErrors:\n    1 (retrying may help)\nChecks:\n    2 / 2, 100%\nTransferred:\n    2 MiB / 2 MiB, 100%, 1 MiB/s, ETA 0s\n")
+	want := "Errors:\n    1 (retrying may help)\nChecks:\n    2 / 2, 100%\nTransferred:\n    2 MiB / 2 MiB, 100%, 1 MiB/s, ETA 0s\n"
+	if got != want {
+		t.Fatalf("terminal log mismatch\n got: %q\nwant: %q", got, want)
+	}
+}

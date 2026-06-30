@@ -401,6 +401,7 @@ func Run() {
 	taskRow := container.NewHBox(taskSelect, allTasks, doctorButton, dryRunButton, updateButton, syncButton, clearButton)
 	syncHeader := container.NewVBox(configRow, taskRow, status)
 	logScroll := container.NewScroll(logOutput)
+	log.scroll = logScroll
 	syncTab := container.NewBorder(syncHeader, nil, nil, nil, logScroll)
 
 	form := widget.NewForm(
@@ -463,6 +464,7 @@ func splitLines(text string) []string {
 type guiLogWriter struct {
 	mu     sync.Mutex
 	entry  *widget.TextGrid
+	scroll *container.Scroll
 	buffer terminalLogBuffer
 }
 
@@ -477,6 +479,9 @@ func (w *guiLogWriter) Append(text string) {
 	w.mu.Unlock()
 	fyne.Do(func() {
 		w.entry.SetText(current)
+		if w.scroll != nil {
+			w.scroll.ScrollToBottom()
+		}
 	})
 }
 
