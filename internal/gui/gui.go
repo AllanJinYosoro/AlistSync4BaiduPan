@@ -57,15 +57,26 @@ func Run() {
 	checkers := widget.NewEntry()
 	excludes := widget.NewMultiLineEntry()
 	excludes.SetMinRowsVisible(4)
-	taskSummary := widget.NewLabel("")
+	configTaskSelect := widget.NewSelect(nil, nil)
+	configTaskSelect.PlaceHolder = "Select task"
+	taskName := widget.NewEntry()
+	taskLocal := widget.NewEntry()
+	taskRemote := widget.NewEntry()
+	taskExcludes := widget.NewMultiLineEntry()
+	taskExcludes.SetMinRowsVisible(4)
 	yamlEntry := widget.NewMultiLineEntry()
 	yamlEntry.SetMinRowsVisible(20)
 	depStatus := widget.NewTextGrid()
 
 	var currentCfg config.Config
+	selectedConfigTask := -1
+	loadingConfigTask := false
 	var controls []fyne.Disableable
 	var loadConfig func()
 	var refreshDeps func(prompt bool)
+	var saveSelectedConfigTask func()
+	var refreshConfigTaskSelect func(int)
+	var loadSelectedConfigTask func()
 
 	setRunning := func(running bool) {
 		for _, control := range controls {
@@ -80,6 +91,68 @@ func Run() {
 		}
 	}
 
+	taskFormValuesFromInputs := func() taskFormValues {
+		return taskFormValues{
+			Name:         taskName.Text,
+			Local:        taskLocal.Text,
+			Remote:       taskRemote.Text,
+			ExcludesText: taskExcludes.Text,
+		}
+	}
+
+	saveSelectedConfigTask = func() {
+		applyTaskValues(&currentCfg, selectedConfigTask, taskFormValuesFromInputs())
+	}
+
+	loadSelectedConfigTask = func() {
+		if selectedConfigTask < 0 || selectedConfigTask >= len(currentCfg.Tasks) {
+			taskName.SetText("")
+			taskLocal.SetText("")
+			taskRemote.SetText("")
+			taskExcludes.SetText("")
+			return
+		}
+		values := taskValues(currentCfg.Tasks[selectedConfigTask])
+		taskName.SetText(values.Name)
+		taskLocal.SetText(values.Local)
+		taskRemote.SetText(values.Remote)
+		taskExcludes.SetText(values.ExcludesText)
+	}
+
+	refreshConfigTaskSelect = func(index int) {
+		labels := taskLabels(currentCfg.Tasks)
+		loadingConfigTask = true
+		configTaskSelect.Options = labels
+		if len(labels) == 0 {
+			selectedConfigTask = -1
+			configTaskSelect.ClearSelected()
+			configTaskSelect.Refresh()
+			loadingConfigTask = false
+			loadSelectedConfigTask()
+			return
+		}
+		if index < 0 {
+			index = 0
+		}
+		if index >= len(labels) {
+			index = len(labels) - 1
+		}
+		selectedConfigTask = index
+		configTaskSelect.SetSelected(labels[index])
+		configTaskSelect.Refresh()
+		loadingConfigTask = false
+		loadSelectedConfigTask()
+	}
+
+	configTaskSelect.OnChanged = func(selected string) {
+		if loadingConfigTask {
+			return
+		}
+		saveSelectedConfigTask()
+		selectedConfigTask = selectedTaskIndex(configTaskSelect.Options, selected)
+		loadSelectedConfigTask()
+	}
+
 	fillForm := func(cfg config.Config) {
 		currentCfg = cfg.Clone()
 		alistURL.SetText(cfg.AList.URL)
@@ -92,7 +165,7 @@ func Run() {
 		transfers.SetText(strconv.Itoa(cfg.Rclone.Transfers))
 		checkers.SetText(strconv.Itoa(cfg.Rclone.Checkers))
 		excludes.SetText(strings.Join(cfg.Rclone.Excludes, "\n"))
-		taskSummary.SetText(strings.Join(config.TaskNames(cfg), ", "))
+		refreshConfigTaskSelect(0)
 	}
 
 	loadConfig = func() {
@@ -126,6 +199,7 @@ func Run() {
 	}
 
 	applyForm := func() (config.Config, error) {
+		saveSelectedConfigTask()
 		cfg := currentCfg.Clone()
 		cfg.AList.URL = strings.TrimSpace(alistURL.Text)
 		cfg.AList.Username = strings.TrimSpace(alistUser.Text)
@@ -298,7 +372,30 @@ func Run() {
 		}, w).Show()
 	})
 
-	controls = []fyne.Disableable{configPath, refreshButton, taskSelect, allTasks, doctorButton, dryRunButton, updateButton, syncButton, clearButton}
+	newTaskButton := widget.NewButtonWithIcon("New task", theme.ContentAddIcon(), func() {
+		saveSelectedConfigTask()
+		refreshConfigTaskSelect(appendTask(&currentCfg))
+		status.SetText("New task added. Fill it in and save.")
+	})
+	deleteTaskButton := widget.NewButtonWithIcon("Delete task", theme.DeleteIcon(), func() {
+		if selectedConfigTask < 0 || selectedConfigTask >= len(currentCfg.Tasks) {
+			status.SetText("Select a task to delete")
+			return
+		}
+		name := strings.TrimSpace(currentCfg.Tasks[selectedConfigTask].Name)
+		if name == "" {
+			name = "this unnamed task"
+		}
+		dialog.NewConfirm("Delete task", "Delete "+name+" from the config form?", func(ok bool) {
+			if !ok {
+				return
+			}
+			refreshConfigTaskSelect(deleteTask(&currentCfg, selectedConfigTask))
+			status.SetText("Task deleted. Save to write the config.")
+		}, w).Show()
+	})
+
+	controls = []fyne.Disableable{configPath, refreshButton, taskSelect, allTasks, doctorButton, dryRunButton, updateButton, syncButton, clearButton, configTaskSelect, newTaskButton, deleteTaskButton}
 
 	configRow := container.NewBorder(nil, nil, widget.NewLabel("Config"), refreshButton, configPath)
 	taskRow := container.NewHBox(taskSelect, allTasks, doctorButton, dryRunButton, updateButton, syncButton, clearButton)
@@ -317,7 +414,11 @@ func Run() {
 		widget.NewFormItem("Transfers", transfers),
 		widget.NewFormItem("Checkers", checkers),
 		widget.NewFormItem("Global excludes", excludes),
-		widget.NewFormItem("Tasks", taskSummary),
+		widget.NewFormItem("Task", container.NewHBox(configTaskSelect, newTaskButton, deleteTaskButton)),
+		widget.NewFormItem("Task name", taskName),
+		widget.NewFormItem("Task local", taskLocal),
+		widget.NewFormItem("Task remote", taskRemote),
+		widget.NewFormItem("Task excludes", taskExcludes),
 	)
 	formButtons := container.NewHBox(widget.NewButtonWithIcon("Save", theme.DocumentSaveIcon(), saveForm), widget.NewButtonWithIcon("Reload", theme.ViewRefreshIcon(), loadConfig))
 	formTab := container.NewBorder(nil, formButtons, nil, nil, container.NewScroll(form))

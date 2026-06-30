@@ -78,6 +78,54 @@ func TestGUICommandArgs(t *testing.T) {
 	}
 }
 
+func TestTaskFormHelpers(t *testing.T) {
+	cfg := config.Config{Tasks: []config.Task{
+		{Name: "one", Local: "C:/one", Remote: "/one"},
+		{Name: "two", Local: "C:/two", Remote: "/two"},
+	}}
+
+	applyTaskValues(&cfg, 0, taskFormValues{
+		Name:         " updated ",
+		Local:        " C:/updated ",
+		Remote:       " /updated ",
+		ExcludesText: "tmp/**\n\ncache/**",
+	})
+	wantTask := config.Task{
+		Name:     "updated",
+		Local:    "C:/updated",
+		Remote:   "/updated",
+		Excludes: []string{"tmp/**", "cache/**"},
+	}
+	if !reflect.DeepEqual(cfg.Tasks[0], wantTask) {
+		t.Fatalf("task update mismatch\n got: %#v\nwant: %#v", cfg.Tasks[0], wantTask)
+	}
+
+	newIndex := appendTask(&cfg)
+	if newIndex != 2 || len(cfg.Tasks) != 3 {
+		t.Fatalf("append mismatch: index=%d tasks=%#v", newIndex, cfg.Tasks)
+	}
+	labels := taskLabels(cfg.Tasks)
+	if labels[0] != "1. updated" || labels[2] != "3. (unnamed task)" {
+		t.Fatalf("unexpected labels: %#v", labels)
+	}
+	if selectedTaskIndex(labels, labels[1]) != 1 {
+		t.Fatalf("selected index mismatch for labels %#v", labels)
+	}
+
+	next := deleteTask(&cfg, 1)
+	if next != 1 || len(cfg.Tasks) != 2 {
+		t.Fatalf("delete middle mismatch: next=%d tasks=%#v", next, cfg.Tasks)
+	}
+	next = deleteTask(&cfg, 1)
+	if next != 0 || len(cfg.Tasks) != 1 {
+		t.Fatalf("delete last mismatch: next=%d tasks=%#v", next, cfg.Tasks)
+	}
+	next = deleteTask(&cfg, 0)
+	if next != -1 || len(cfg.Tasks) != 0 {
+		t.Fatalf("delete only mismatch: next=%d tasks=%#v", next, cfg.Tasks)
+	}
+}
+
 func TestTerminalLogBufferOverwritesCarriageReturnProgress(t *testing.T) {
 	var b terminalLogBuffer
 	got := b.Append("start\nTransferred: 1 MiB / 10 MiB\rTransferred: 5 MiB / 10 MiB\rTransferred: 10 MiB / 10 MiB\nfinished\n")
