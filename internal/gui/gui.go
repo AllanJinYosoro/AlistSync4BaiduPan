@@ -55,6 +55,8 @@ func Run() {
 	rcloneConfig := widget.NewEntry()
 	transfers := widget.NewEntry()
 	checkers := widget.NewEntry()
+	retries := widget.NewEntry()
+	lowLevelRetries := widget.NewEntry()
 	excludes := widget.NewMultiLineEntry()
 	excludes.SetMinRowsVisible(4)
 	configTaskSelect := widget.NewSelect(nil, nil)
@@ -164,6 +166,8 @@ func Run() {
 		rcloneConfig.SetText(cfg.Rclone.ConfigFile)
 		transfers.SetText(strconv.Itoa(cfg.Rclone.Transfers))
 		checkers.SetText(strconv.Itoa(cfg.Rclone.Checkers))
+		retries.SetText(strconv.Itoa(cfg.Rclone.Retries))
+		lowLevelRetries.SetText(strconv.Itoa(cfg.Rclone.LowLevelRetries))
 		excludes.SetText(strings.Join(cfg.Rclone.Excludes, "\n"))
 		refreshConfigTaskSelect(0)
 	}
@@ -219,6 +223,14 @@ func Run() {
 		cfg.Rclone.Checkers, err = strconv.Atoi(strings.TrimSpace(checkers.Text))
 		if err != nil {
 			return config.Config{}, fmt.Errorf("rclone.checkers must be a number")
+		}
+		cfg.Rclone.Retries, err = strconv.Atoi(strings.TrimSpace(retries.Text))
+		if err != nil {
+			return config.Config{}, fmt.Errorf("rclone.retries must be a number")
+		}
+		cfg.Rclone.LowLevelRetries, err = strconv.Atoi(strings.TrimSpace(lowLevelRetries.Text))
+		if err != nil {
+			return config.Config{}, fmt.Errorf("rclone.low_level_retries must be a number")
 		}
 		cfg.Rclone.Excludes = splitLines(excludes.Text)
 		if err := cfg.Validate(); err != nil {
@@ -414,6 +426,8 @@ func Run() {
 		widget.NewFormItem("Rclone config", rcloneConfig),
 		widget.NewFormItem("Transfers", transfers),
 		widget.NewFormItem("Checkers", checkers),
+		widget.NewFormItem("Retries", retries),
+		widget.NewFormItem("Low-level retries", lowLevelRetries),
 		widget.NewFormItem("Global excludes", excludes),
 		widget.NewFormItem("Task", container.NewHBox(configTaskSelect, newTaskButton, deleteTaskButton)),
 		widget.NewFormItem("Task name", taskName),

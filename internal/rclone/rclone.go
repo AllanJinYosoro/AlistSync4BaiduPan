@@ -61,8 +61,8 @@ func BuildArgs(mode string, cfg config.Config, task config.Task) []string {
 		"--config", cfg.RcloneConfigPath(),
 		"--transfers", strconv.Itoa(cfg.Rclone.Transfers),
 		"--checkers", strconv.Itoa(cfg.Rclone.Checkers),
-		"--retries", "8",
-		"--low-level-retries", "20",
+		"--retries", strconv.Itoa(cfg.Rclone.Retries),
+		"--low-level-retries", strconv.Itoa(cfg.Rclone.LowLevelRetries),
 		"--retries-sleep", "5s",
 		"--progress",
 	}

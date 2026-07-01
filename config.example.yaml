@@ -10,6 +10,8 @@ rclone:
   config_file: ".alist-sync/rclone.conf"
   transfers: 4
   checkers: 8
+  retries: 2
+  low_level_retries: 20
   excludes:
     - "**/.venv/**"
     - "**/__pycache__/**"

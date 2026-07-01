@@ -36,11 +36,13 @@ type AListConfig struct {
 }
 
 type RcloneConfig struct {
-	Remote     string   `yaml:"remote"`
-	ConfigFile string   `yaml:"config_file"`
-	Transfers  int      `yaml:"transfers"`
-	Checkers   int      `yaml:"checkers"`
-	Excludes   []string `yaml:"excludes"`
+	Remote          string   `yaml:"remote"`
+	ConfigFile      string   `yaml:"config_file"`
+	Transfers       int      `yaml:"transfers"`
+	Checkers        int      `yaml:"checkers"`
+	Retries         int      `yaml:"retries"`
+	LowLevelRetries int      `yaml:"low_level_retries"`
+	Excludes        []string `yaml:"excludes"`
 }
 
 type Task struct {
@@ -102,6 +104,12 @@ func ApplyDefaults(cfg *Config) {
 	}
 	if cfg.Rclone.Checkers == 0 {
 		cfg.Rclone.Checkers = 8
+	}
+	if cfg.Rclone.Retries == 0 {
+		cfg.Rclone.Retries = 2
+	}
+	if cfg.Rclone.LowLevelRetries == 0 {
+		cfg.Rclone.LowLevelRetries = 20
 	}
 }
 
@@ -305,6 +313,8 @@ rclone:
   config_file: ".alist-sync/rclone.conf"
   transfers: 4
   checkers: 8
+  retries: 2
+  low_level_retries: 20
   excludes:
     - "**/.venv/**"
     - "**/__pycache__/**"

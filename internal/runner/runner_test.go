@@ -156,11 +156,13 @@ func TestSelectTasks(t *testing.T) {
 func TestBuildRcloneArgs(t *testing.T) {
 	cfg := config.Config{
 		Rclone: config.RcloneConfig{
-			Remote:     "alist_baidu",
-			ConfigFile: ".alist-sync/rclone.conf",
-			Transfers:  4,
-			Checkers:   8,
-			Excludes:   []string{"**/.venv/**", "**/.git/**"},
+			Remote:          "alist_baidu",
+			ConfigFile:      ".alist-sync/rclone.conf",
+			Transfers:       4,
+			Checkers:        8,
+			Retries:         2,
+			LowLevelRetries: 20,
+			Excludes:        []string{"**/.venv/**", "**/.git/**"},
 		},
 	}
 	task := config.Task{
@@ -178,7 +180,7 @@ func TestBuildRcloneArgs(t *testing.T) {
 		"--config", config.ToNativePath(".alist-sync/rclone.conf"),
 		"--transfers", "4",
 		"--checkers", "8",
-		"--retries", "8",
+		"--retries", "2",
 		"--low-level-retries", "20",
 		"--retries-sleep", "5s",
 		"--progress",

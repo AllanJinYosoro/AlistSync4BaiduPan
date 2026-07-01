@@ -1,4 +1,4 @@
-﻿# bdp-sync.exe
+# bdp-sync.exe
 
 `bdp-sync.exe` 是一个 Windows 桌面同步工具，用 AList WebDAV 和 rclone 把本地文件夹备份到百度网盘。普通使用不需要打开终端：把 `bdp-sync.exe`、`config.yaml` 和 `.env` 放在同一目录，双击 exe 即可打开窗口。
 
@@ -55,6 +55,8 @@ rclone:
   config_file: ".alist-sync/rclone.conf"
   transfers: 4
   checkers: 8
+  retries: 2
+  low_level_retries: 20
   excludes:
     - "**/.venv/**"
     - "**/__pycache__/**"
@@ -90,6 +92,8 @@ ALIST_PASSWORD=your_alist_webdav_password
 - `config_file`: 程序维护的 rclone 配置文件路径，默认是 `.alist-sync/rclone.conf`。
 - `transfers`: 同时传输的文件数。网络或网盘限速明显时可以调小。
 - `checkers`: 并发检查数量。
+- `retries`: 普通失败重试次数，默认 `2`。
+- `low_level_retries`: 底层网络/API 失败重试次数，默认 `20`。
 - `excludes`: 全局排除规则，所有任务都会生效。
 
 `rclone.conf` 由程序自动生成和刷新，通常不需要手动编辑。
