@@ -272,3 +272,12 @@ Elapsed time:         0.1s
 		t.Fatalf("terminal log mismatch\n got: %q\nwant: %q", got, want)
 	}
 }
+
+func TestTerminalLogBufferCollapsesBioGNNUpdateProgress(t *testing.T) {
+	var b terminalLogBuffer
+	got := b.Append("start\nTransferred:   \t          0 B / 0 B, -, 0 B/s, ETA -\nChecks:               151 / 151, 100%, Listed 598\nElapsed time:         0.4sTransferred:   \t          0 B / 0 B, -, 0 B/s, ETA -\nChecks:               340 / 340, 100%, Listed 1015\nElapsed time:         0.9sTransferred:   \t          0 B / 0 B, -, 0 B/s, ETA -\nChecks:               557 / 557, 100%, Listed 1418\nElapsed time:         1.5s\n")
+	want := "start\nTransferred:   \t          0 B / 0 B, -, 0 B/s, ETA -\nChecks:               557 / 557, 100%, Listed 1418\nElapsed time:         1.5s\n"
+	if got != want {
+		t.Fatalf("terminal log mismatch\n got: %q\nwant: %q", got, want)
+	}
+}

@@ -248,9 +248,8 @@ func (b *terminalLogBuffer) finishLine(start int) {
 	}
 	line := string(b.runes[start : len(b.runes)-1])
 	if split := embeddedRcloneProgressStartIndex(line); split > 0 {
-		b.runes = append(b.runes[:start], b.runes[start+split:]...)
-		b.lineStart = len(b.runes)
-		line = string(b.runes[start : len(b.runes)-1])
+		b.replaceProgressBlockWithEmbeddedStart(start, split)
+		return
 	}
 
 	trimmed := strings.TrimSpace(line)
@@ -269,6 +268,20 @@ func (b *terminalLogBuffer) finishLine(start int) {
 		return
 	}
 	b.inRcloneProgressBlock = false
+}
+
+func (b *terminalLogBuffer) replaceProgressBlockWithEmbeddedStart(lineStart, split int) {
+	start := lineStart
+	if b.rcloneProgressStart < lineStart && b.rcloneProgressEnd > b.rcloneProgressStart {
+		start = b.rcloneProgressStart
+	}
+	tail := append([]rune(nil), b.runes[lineStart+split:]...)
+	b.runes = append(b.runes[:start], tail...)
+	b.lineStart = len(b.runes)
+	b.inRcloneProgressBlock = true
+	b.rcloneProgressStart = start
+	b.rcloneProgressEnd = len(b.runes)
+	b.rcloneProgressRestart = false
 }
 
 func (b *terminalLogBuffer) startRcloneProgressBlock(start int) {
