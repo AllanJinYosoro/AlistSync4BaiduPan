@@ -32,8 +32,8 @@ func Run() {
 	configPath.SetPlaceHolder("config.yaml")
 
 	status := widget.NewLabel("Ready")
-	logOutput := widget.NewTextGrid()
-	logOutput.SetText("Command output will appear here.")
+	logOutput := widget.NewLabelWithStyle("Command output will appear here.", fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
+	logOutput.Selectable = true
 	log := &guiLogWriter{entry: logOutput}
 
 	taskSelect := widget.NewSelect(nil, nil)
@@ -477,7 +477,7 @@ func splitLines(text string) []string {
 
 type guiLogWriter struct {
 	mu     sync.Mutex
-	entry  *widget.TextGrid
+	entry  *widget.Label
 	scroll *container.Scroll
 	buffer terminalLogBuffer
 }
