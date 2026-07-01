@@ -13,14 +13,18 @@ bdp-sync.exe update documents
 bdp-sync.exe sync documents
 ```
 
-- `init`: 创建默认 `config.yaml` 和本地状态目录。
+- `init`: 创建默认 `config.yaml` 和本地状态目录，并补充 `.gitignore`。
 - `setup deps`: 检查并安装 `rclone` 和 `alist`。
 - `doctor`: 检查配置、依赖、AList、WebDAV/rclone 连接和上传文件名。
 - `dry-run`: 预览完整同步会改变什么。
 - `update`: 上传新增或修改的本地文件，不删除远端独有文件。
 - `sync`: 让远端与本地一致，可能删除远端独有文件。
 
-`documents` 是 `config.yaml` 中的任务名。也可以使用 `--all` 处理全部任务。
+`documents` 是 `config.yaml` 中的任务名。也可以使用 `--all` 处理全部任务：
+
+```powershell
+bdp-sync.exe update --all
+```
 
 ## 全局配置路径
 
@@ -31,12 +35,30 @@ bdp-sync.exe doctor --config config.yaml
 bdp-sync.exe update --config config.yaml documents
 ```
 
+## 只处理一个文件或文件夹
+
+`--path` 可以只处理所选任务下的某个本地路径，不能和 `--all` 一起用。文件路径只支持 `update`，文件夹路径支持 `update` 和 `sync`。
+
+```powershell
+bdp-sync.exe update --path "D:/Documents/report.docx" documents
+bdp-sync.exe sync --path "D:/Documents/Project" documents
+```
+
+## 安装依赖
+
+```powershell
+bdp-sync.exe setup deps
+bdp-sync.exe setup deps --force
+```
+
+`--force` 会强制重新下载本地工具。
+
 ## 开发构建
 
 开发时构建无控制台窗口的 Windows GUI exe：
 
 ```powershell
-go build -ldflags "-H=windowsgui" -o bdp-sync.exe ./cmd/bdp-sync
+go build -buildvcs=false -ldflags "-H=windowsgui" -o bdp-sync.exe ./cmd/bdp-sync
 ```
 
 exe 图标由 `assets/app-icon.ico` 生成并嵌入。修改图标后，先重新生成 Windows 资源文件：

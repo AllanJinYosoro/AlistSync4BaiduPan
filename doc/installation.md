@@ -24,6 +24,29 @@ config.yaml
 
 `ALIST_PASSWORD` 是 AList 用户密码，不是百度网盘账号密码。
 
+## config.yaml 字段
+
+配置文件由三部分组成：
+
+- `alist`: AList 地址、WebDAV 用户名、密码环境变量名，以及可选的 AList 启动命令。
+- `rclone`: rclone remote 名称、配置文件位置、并发数、重试次数和全局排除规则。
+- `tasks`: 一个或多个同步任务，每个任务包含任务名、本地目录、网盘目录和任务级排除规则。
+
+常用字段说明：
+
+- `alist.url`: AList 服务地址，默认本机地址通常是 `http://127.0.0.1:5244`。
+- `alist.username`: AList 里用于 WebDAV 的用户名。
+- `alist.password_env`: 保存 AList WebDAV 密码的环境变量名，默认可用 `ALIST_PASSWORD`。
+- `alist.server_command`: AList 不可访问时用于启动 AList 的命令。
+- `rclone.transfers`: 同时传输的文件数。网络或网盘限速明显时可以调小。
+- `rclone.excludes`: 全局排除规则，所有任务都会生效。
+- `tasks[].name`: 任务名，必须唯一。
+- `tasks[].local`: 本地文件夹路径，例如 `D:/Documents` 或 `C:\Users\Name\Documents`。
+- `tasks[].remote`: AList 中挂载出来的远端路径，例如 `/BaiduPanBackup/Documents`。
+- `tasks[].excludes`: 仅对当前任务生效的排除规则。
+
+`rclone.conf` 由程序自动生成和刷新，通常不需要手动编辑。
+
 ## Windows 手动安装 AList
 
 从 AList release 页面下载 Windows 64 位压缩包，通常是 `alist-windows-amd64.zip`。解压到稳定目录，例如 `C:\alist`，然后启动：
