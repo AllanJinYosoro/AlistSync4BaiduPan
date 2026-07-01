@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -74,6 +75,9 @@ func Run() {
 	selectedConfigTask := -1
 	loadingConfigTask := false
 	var controls []fyne.Disableable
+	var currentCancel context.CancelFunc
+	currentRun := 0
+	var stopButton *widget.Button
 	var loadConfig func()
 	var refreshDeps func(prompt bool)
 	var saveSelectedConfigTask func()
@@ -284,15 +288,26 @@ func Run() {
 			return
 		}
 
+		ctx, cancel := context.WithCancel(context.Background())
+		currentRun++
+		runID := currentRun
+		currentCancel = cancel
+		stopButton.Enable()
 		setRunning(true)
 		status.SetText("Running " + action + "...")
 		log.Append("\n$ bdp-sync " + strings.Join(args, " ") + "\n")
 
 		go func() {
-			r := runner.New(log, log)
+			r := runner.NewContext(ctx, log, log)
 			err := r.Run(args)
 			fyne.Do(func() {
-				if err != nil {
+				if currentRun == runID {
+					currentCancel = nil
+				}
+				stopButton.Disable()
+				if ctx.Err() != nil {
+					status.SetText("Stopped " + action)
+				} else if err != nil {
 					status.SetText("Failed: " + err.Error())
 					log.Append("error: " + err.Error() + "\n")
 				} else {
@@ -383,6 +398,16 @@ func Run() {
 			}
 		}, w).Show()
 	})
+	stopButton = widget.NewButtonWithIcon("Stop", theme.MediaStopIcon(), func() {
+		if currentCancel == nil {
+			return
+		}
+		status.SetText("Stopping...")
+		log.Append("stop requested\n")
+		currentCancel()
+		stopButton.Disable()
+	})
+	stopButton.Disable()
 
 	newTaskButton := widget.NewButtonWithIcon("New task", theme.ContentAddIcon(), func() {
 		saveSelectedConfigTask()
@@ -410,7 +435,7 @@ func Run() {
 	controls = []fyne.Disableable{configPath, refreshButton, taskSelect, allTasks, doctorButton, dryRunButton, updateButton, syncButton, clearButton, configTaskSelect, newTaskButton, deleteTaskButton}
 
 	configRow := container.NewBorder(nil, nil, widget.NewLabel("Config"), refreshButton, configPath)
-	taskRow := container.NewHBox(taskSelect, allTasks, doctorButton, dryRunButton, updateButton, syncButton, clearButton)
+	taskRow := container.NewHBox(taskSelect, allTasks, doctorButton, dryRunButton, updateButton, syncButton, stopButton, clearButton)
 	syncHeader := container.NewVBox(configRow, taskRow, status)
 	logScroll := container.NewScroll(logOutput)
 	log.scroll = logScroll

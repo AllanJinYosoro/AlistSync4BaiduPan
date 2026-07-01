@@ -2,6 +2,8 @@ package runner
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -151,6 +153,29 @@ func TestSelectTasks(t *testing.T) {
 	}
 	if _, err := config.SelectTasks(tasks, "", false); err == nil {
 		t.Fatal("expected error when multiple tasks and no selector")
+	}
+}
+
+func TestTransferStopsWhenContextCanceled(t *testing.T) {
+	dir := t.TempDir()
+	localDir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`alist:
+  username: "admin"
+tasks:
+  - name: "documents"
+    local: "`+filepath.ToSlash(localDir)+`"
+    remote: "/backup"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	r := NewContext(ctx, io.Discard, io.Discard)
+	err := r.cmdTransfer("update", []string{"--config", cfgPath, "documents"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context canceled, got %v", err)
 	}
 }
 

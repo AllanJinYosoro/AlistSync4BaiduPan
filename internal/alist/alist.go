@@ -1,6 +1,7 @@
 package alist
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +19,10 @@ type Starter func(name string, args ...string) error
 type ManagedStarter func(name string, args ...string) (func() error, error)
 
 func EnsureReady(cfg config.Config, start Starter, stdout io.Writer) error {
+	return EnsureReadyContext(context.Background(), cfg, start, stdout)
+}
+
+func EnsureReadyContext(ctx context.Context, cfg config.Config, start Starter, stdout io.Writer) error {
 	if IsReachable(cfg.AList.URL) {
 		fmt.Fprintln(stdout, "AList is reachable:", strings.TrimRight(cfg.AList.URL, "/"))
 		return nil
@@ -34,11 +39,14 @@ func EnsureReady(cfg config.Config, start Starter, stdout io.Writer) error {
 		start = StartBackgroundProcess
 	}
 	fmt.Fprintln(stdout, "AList is not reachable; starting:", cfg.AList.ServerCommand)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := start(command, args...); err != nil {
 		return fmt.Errorf("start AList failed: %w", err)
 	}
 	timeout := time.Duration(cfg.AList.StartupTimeoutSeconds) * time.Second
-	if err := Wait(cfg.AList.URL, timeout); err != nil {
+	if err := WaitContext(ctx, cfg.AList.URL, timeout); err != nil {
 		return err
 	}
 	fmt.Fprintln(stdout, "AList is ready:", strings.TrimRight(cfg.AList.URL, "/"))
@@ -88,15 +96,26 @@ func IsReachable(rawURL string) bool {
 }
 
 func Wait(rawURL string, timeout time.Duration) error {
+	return WaitContext(context.Background(), rawURL, timeout)
+}
+
+func WaitContext(ctx context.Context, rawURL string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if IsReachable(rawURL) {
 			return nil
 		}
 		if timeout == 0 || time.Now().After(deadline) {
 			return fmt.Errorf("AList did not become reachable at %s within %s", rawURL, timeout)
 		}
-		time.Sleep(500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 }
 

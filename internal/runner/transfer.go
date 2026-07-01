@@ -36,12 +36,12 @@ func (r Runner) cmdTransfer(mode string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if problems, err := filename.FindUnsupportedUploadNames(tasks, filename.MaxProblems); err != nil {
+	if problems, err := filename.FindUnsupportedUploadNamesContext(r.context(), tasks, filename.MaxProblems); err != nil {
 		return err
 	} else if len(problems) > 0 {
 		return fmt.Errorf("%s", filename.FormatProblems(problems))
 	}
-	zeroByteFiles, err := filename.FindZeroByteFiles(tasks)
+	zeroByteFiles, err := filename.FindZeroByteFilesContext(r.context(), tasks)
 	if err != nil {
 		return err
 	}
@@ -49,7 +49,10 @@ func (r Runner) cmdTransfer(mode string, args []string) error {
 	for _, file := range zeroByteFiles {
 		zeroByteExcludes[file.Task] = append(zeroByteExcludes[file.Task], file.Exclude)
 	}
-	if err := alist.EnsureReady(cfg, r.start, r.stdout); err != nil {
+	if err := r.context().Err(); err != nil {
+		return err
+	}
+	if err := alist.EnsureReadyContext(r.context(), cfg, r.start, r.stdout); err != nil {
 		return err
 	}
 	if err := rclone.EnsureConfig(cfg, r.runOutput, r.stdout); err != nil {
@@ -60,6 +63,9 @@ func (r Runner) cmdTransfer(mode string, args []string) error {
 		return err
 	}
 	for _, task := range tasks {
+		if err := r.context().Err(); err != nil {
+			return err
+		}
 		if excludes := zeroByteExcludes[task.Name]; len(excludes) > 0 {
 			fmt.Fprintf(r.stdout, "skipping %d zero-byte file(s) for task %s\n", len(excludes), task.Name)
 			task.Excludes = append(append([]string(nil), task.Excludes...), excludes...)
@@ -80,7 +86,7 @@ func (r Runner) runOutput(name string, args ...string) (string, error) {
 	if r.output != nil {
 		return r.output(name, args...)
 	}
-	cmd := proc.Command(name, args...)
+	cmd := proc.CommandContext(r.context(), name, args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }

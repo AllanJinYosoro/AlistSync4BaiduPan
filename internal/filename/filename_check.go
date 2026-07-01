@@ -1,6 +1,7 @@
 package filename
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -25,10 +26,20 @@ type ZeroByteFile struct {
 }
 
 func FindUnsupportedUploadNames(tasks []config.Task, limit int) ([]Problem, error) {
+	return FindUnsupportedUploadNamesContext(context.Background(), tasks, limit)
+}
+
+func FindUnsupportedUploadNamesContext(ctx context.Context, tasks []config.Task, limit int) ([]Problem, error) {
 	var problems []Problem
 	for _, task := range tasks {
+		if err := ctx.Err(); err != nil {
+			return problems, err
+		}
 		root := config.ToNativePath(task.Local)
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if err != nil {
 				return err
 			}
@@ -68,10 +79,20 @@ func UnsupportedUploadNameReason(name string) string {
 }
 
 func FindZeroByteFiles(tasks []config.Task) ([]ZeroByteFile, error) {
+	return FindZeroByteFilesContext(context.Background(), tasks)
+}
+
+func FindZeroByteFilesContext(ctx context.Context, tasks []config.Task) ([]ZeroByteFile, error) {
 	var files []ZeroByteFile
 	for _, task := range tasks {
+		if err := ctx.Err(); err != nil {
+			return files, err
+		}
 		root := config.ToNativePath(task.Local)
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if err != nil {
 				return err
 			}
