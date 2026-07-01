@@ -18,6 +18,12 @@ type Problem struct {
 	Why  string
 }
 
+type ZeroByteFile struct {
+	Task    string
+	Path    string
+	Exclude string
+}
+
 func FindUnsupportedUploadNames(tasks []config.Task, limit int) ([]Problem, error) {
 	var problems []Problem
 	for _, task := range tasks {
@@ -59,6 +65,45 @@ func UnsupportedUploadNameReason(name string) string {
 		return "contains fullwidth colon U+FF1A; Baidu Netdisk through AList WebDAV can reject it with HTTP 405"
 	}
 	return ""
+}
+
+func FindZeroByteFiles(tasks []config.Task) ([]ZeroByteFile, error) {
+	var files []ZeroByteFile
+	for _, task := range tasks {
+		root := config.ToNativePath(task.Local)
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			if info.Size() != 0 {
+				return nil
+			}
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			files = append(files, ZeroByteFile{
+				Task:    task.Name,
+				Path:    path,
+				Exclude: filepath.ToSlash(rel),
+			})
+			return nil
+		})
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return files, fmt.Errorf("scan task %q: %w", task.Name, err)
+		}
+	}
+	return files, nil
 }
 
 func FormatProblems(problems []Problem) string {

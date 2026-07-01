@@ -41,6 +41,14 @@ func (r Runner) cmdTransfer(mode string, args []string) error {
 	} else if len(problems) > 0 {
 		return fmt.Errorf("%s", filename.FormatProblems(problems))
 	}
+	zeroByteFiles, err := filename.FindZeroByteFiles(tasks)
+	if err != nil {
+		return err
+	}
+	zeroByteExcludes := map[string][]string{}
+	for _, file := range zeroByteFiles {
+		zeroByteExcludes[file.Task] = append(zeroByteExcludes[file.Task], file.Exclude)
+	}
 	if err := alist.EnsureReady(cfg, r.start, r.stdout); err != nil {
 		return err
 	}
@@ -52,11 +60,18 @@ func (r Runner) cmdTransfer(mode string, args []string) error {
 		return err
 	}
 	for _, task := range tasks {
+		if excludes := zeroByteExcludes[task.Name]; len(excludes) > 0 {
+			fmt.Fprintf(r.stdout, "skipping %d zero-byte file(s) for task %s\n", len(excludes), task.Name)
+			task.Excludes = append(append([]string(nil), task.Excludes...), excludes...)
+		}
 		args := rclone.BuildArgs(mode, cfg, task)
 		fmt.Fprintf(r.stdout, "\n==> %s: %s -> %s:%s\n", task.Name, task.Local, cfg.Rclone.Remote, config.TrimRemotePath(task.Remote))
 		if err := r.exec(rclonePath, args...); err != nil {
 			return fmt.Errorf("%s failed for task %s: %w", mode, task.Name, err)
 		}
+	}
+	if mode == "dry-run" {
+		fmt.Fprintf(r.stdout, "\nDry run skipped %d zero-byte file(s).\n", len(zeroByteFiles))
 	}
 	return nil
 }

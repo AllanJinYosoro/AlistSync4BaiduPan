@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -225,6 +226,72 @@ func TestFindUnsupportedUploadNamesReportsFullwidthColon(t *testing.T) {
 	}
 }
 
+func TestDryRunSkipsZeroByteFiles(t *testing.T) {
+	dir := t.TempDir()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWD)
+	if err := os.MkdirAll(filepath.Join(".alist-sync", "tools"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(".alist-sync", "tools", deps.ExeName("rclone")), []byte("fake"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	localDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(localDir, "empty.md"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(localDir, "note.md"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`alist:
+  url: "`+server.URL+`"
+  username: "admin"
+rclone:
+  remote: "alist_baidu"
+  config_file: ".alist-sync/rclone.conf"
+tasks:
+  - name: "documents"
+    local: "`+filepath.ToSlash(localDir)+`"
+    remote: "/backup"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ALIST_PASSWORD", "secret")
+	var out bytes.Buffer
+	var calls [][]string
+	r := Runner{
+		stdout: &out,
+		stderr: io.Discard,
+		output: func(name string, args ...string) (string, error) {
+			return "obscured-secret", nil
+		},
+		exec: func(name string, args ...string) error {
+			calls = append(calls, append([]string{name}, args...))
+			return nil
+		},
+	}
+	if err := r.cmdTransfer("dry-run", []string{"--config", cfgPath, "documents"}); err != nil {
+		t.Fatalf("dry-run failed: %v", err)
+	}
+	if len(calls) != 1 || !hasArgPair(calls[0], "--exclude", "empty.md") {
+		t.Fatalf("expected zero-byte exclude, got %#v", calls)
+	}
+	if !strings.Contains(out.String(), "Dry run skipped 1 zero-byte file(s).") {
+		t.Fatalf("missing zero-byte summary: %s", out.String())
+	}
+}
 func TestDependencyStatusFindsLocalTool(t *testing.T) {
 	dir := t.TempDir()
 	oldWD, err := os.Getwd()
@@ -487,6 +554,14 @@ func TestSplitCommandPreservesWindowsBackslashes(t *testing.T) {
 	}
 }
 
+func hasArgPair(args []string, key, value string) bool {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == key && args[i+1] == value {
+			return true
+		}
+	}
+	return false
+}
 func containsArg(args []string, want string) bool {
 	for _, arg := range args {
 		if arg == want {
