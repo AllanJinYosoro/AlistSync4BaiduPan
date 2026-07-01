@@ -9,10 +9,11 @@ import (
 	"bdp-sync/internal/config"
 )
 
-func guiCommandArgs(action, configPath, selectedTask string, all bool) ([]string, error) {
+func guiCommandArgs(action, configPath, selectedTask string, all bool, scopedPath string) ([]string, error) {
 	if strings.TrimSpace(configPath) == "" {
 		configPath = config.DefaultPath
 	}
+	scopedPath = strings.TrimSpace(scopedPath)
 
 	switch action {
 	case "doctor":
@@ -20,10 +21,16 @@ func guiCommandArgs(action, configPath, selectedTask string, all bool) ([]string
 	case "dry-run", "update", "sync":
 		args := []string{action, "--config", configPath}
 		if all {
+			if scopedPath != "" {
+				return nil, errors.New("select one task to use Specific")
+			}
 			return append(args, "--all"), nil
 		}
 		if strings.TrimSpace(selectedTask) == "" {
 			return nil, errors.New("select a task or enable all tasks")
+		}
+		if scopedPath != "" {
+			args = append(args, "--path", scopedPath)
 		}
 		return append(args, selectedTask), nil
 	default:

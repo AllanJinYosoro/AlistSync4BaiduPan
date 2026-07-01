@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -89,6 +90,10 @@ func FindZeroByteFilesContext(ctx context.Context, tasks []config.Task) ([]ZeroB
 			return files, err
 		}
 		root := config.ToNativePath(task.Local)
+		relRoot := root
+		if info, err := os.Stat(root); err == nil && !info.IsDir() {
+			relRoot = filepath.Dir(root)
+		}
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -106,7 +111,7 @@ func FindZeroByteFilesContext(ctx context.Context, tasks []config.Task) ([]ZeroB
 			if info.Size() != 0 {
 				return nil
 			}
-			rel, err := filepath.Rel(root, path)
+			rel, err := filepath.Rel(relRoot, path)
 			if err != nil {
 				return err
 			}

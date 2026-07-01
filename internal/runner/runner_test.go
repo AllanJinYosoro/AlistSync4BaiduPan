@@ -487,6 +487,140 @@ tasks:
 	}
 }
 
+func TestSpecificPathScopesFolderAndFile(t *testing.T) {
+	dir := t.TempDir()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWD)
+	if err := os.MkdirAll(filepath.Join(".alist-sync", "tools"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(".alist-sync", "tools", deps.ExeName("rclone")), []byte("fake"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	localDir := t.TempDir()
+	subDir := filepath.Join(localDir, "sub")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	filePath := filepath.Join(subDir, "one.txt")
+	if err := os.WriteFile(filePath, []byte("one"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`alist:
+  url: "`+server.URL+`"
+  username: "admin"
+rclone:
+  remote: "alist_baidu"
+  config_file: ".alist-sync/rclone.conf"
+tasks:
+  - name: "documents"
+    local: "`+filepath.ToSlash(localDir)+`"
+    remote: "/backup"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ALIST_PASSWORD", "secret")
+	var calls [][]string
+	r := Runner{
+		stdout: io.Discard,
+		stderr: io.Discard,
+		output: func(name string, args ...string) (string, error) {
+			return "obscured-secret", nil
+		},
+		exec: func(name string, args ...string) error {
+			calls = append(calls, append([]string{name}, args...))
+			return nil
+		},
+	}
+	if err := r.cmdTransfer("update", []string{"--config", cfgPath, "--path", subDir, "documents"}); err != nil {
+		t.Fatalf("specific folder update failed: %v", err)
+	}
+	if len(calls) != 1 || calls[0][1] != "copy" || calls[0][2] != subDir || calls[0][3] != "alist_baidu:backup/sub" {
+		t.Fatalf("unexpected folder call: %#v", calls)
+	}
+	calls = nil
+	if err := r.cmdTransfer("update", []string{"--config", cfgPath, "--path", filePath, "documents"}); err != nil {
+		t.Fatalf("specific file update failed: %v", err)
+	}
+	if len(calls) != 1 || calls[0][1] != "copy" || calls[0][2] != filePath || calls[0][3] != "alist_baidu:backup/sub" {
+		t.Fatalf("unexpected file call: %#v", calls)
+	}
+}
+
+func TestSpecificPathRejectsInvalidScopes(t *testing.T) {
+	dir := t.TempDir()
+	localDir := t.TempDir()
+	subDir := filepath.Join(localDir, "sub")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	filePath := filepath.Join(subDir, "one.txt")
+	if err := os.WriteFile(filePath, []byte("one"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`alist:
+  url: "http://127.0.0.1:1"
+  username: "admin"
+tasks:
+  - name: "documents"
+    local: "`+filepath.ToSlash(localDir)+`"
+    remote: "/backup"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := Runner{stdout: io.Discard, stderr: io.Discard}
+	tests := []struct {
+		name string
+		mode string
+		args []string
+		want string
+	}{
+		{
+			name: "all tasks",
+			mode: "update",
+			args: []string{"--config", cfgPath, "--path", subDir, "--all"},
+			want: "--path requires one selected task",
+		},
+		{
+			name: "outside local",
+			mode: "update",
+			args: []string{"--config", cfgPath, "--path", outside, "documents"},
+			want: "outside task documents local path",
+		},
+		{
+			name: "sync file",
+			mode: "sync",
+			args: []string{"--config", cfgPath, "--path", filePath, "documents"},
+			want: "only supported for update",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := r.cmdTransfer(tt.mode, tt.args)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
 func TestUpdateStartsAListWhenConfiguredAndWaitsUntilReady(t *testing.T) {
 	dir := t.TempDir()
 	oldWD, err := os.Getwd()

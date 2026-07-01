@@ -37,14 +37,22 @@ func Run() {
 	logOutput.Selectable = true
 	log := &guiLogWriter{entry: logOutput}
 
-	taskSelect := widget.NewSelect(nil, nil)
+	var refreshSpecific func()
+	taskSelect := widget.NewSelect(nil, func(string) {
+		if refreshSpecific != nil {
+			refreshSpecific()
+		}
+	})
 	taskSelect.PlaceHolder = "Select task"
 	allTasks := widget.NewCheck("All tasks", func(checked bool) {
 		if checked {
 			taskSelect.Disable()
-			return
+		} else {
+			taskSelect.Enable()
 		}
-		taskSelect.Enable()
+		if refreshSpecific != nil {
+			refreshSpecific()
+		}
 	})
 
 	alistURL := widget.NewEntry()
@@ -78,6 +86,7 @@ func Run() {
 	var currentCancel context.CancelFunc
 	currentRun := 0
 	var stopButton *widget.Button
+	var specificButton *widget.Button
 	var loadConfig func()
 	var refreshDeps func(prompt bool)
 	var saveSelectedConfigTask func()
@@ -95,6 +104,20 @@ func Run() {
 		if allTasks.Checked {
 			taskSelect.Disable()
 		}
+		if !running && refreshSpecific != nil {
+			refreshSpecific()
+		}
+	}
+
+	refreshSpecific = func() {
+		if specificButton == nil {
+			return
+		}
+		if currentCancel != nil || allTasks.Checked || strings.TrimSpace(taskSelect.Selected) == "" {
+			specificButton.Disable()
+			return
+		}
+		specificButton.Enable()
 	}
 
 	taskFormValuesFromInputs := func() taskFormValues {
@@ -188,6 +211,7 @@ func Run() {
 			taskSelect.Options = nil
 			taskSelect.ClearSelected()
 			taskSelect.Refresh()
+			refreshSpecific()
 			return
 		}
 		names := config.TaskNames(cfg)
@@ -197,6 +221,7 @@ func Run() {
 			taskSelect.SetSelected(names[0])
 		}
 		taskSelect.Refresh()
+		refreshSpecific()
 		fillForm(cfg)
 		if raw, err := config.LoadText(path); err == nil {
 			yamlEntry.SetText(string(raw))
@@ -280,9 +305,9 @@ func Run() {
 		status.SetText("Ready")
 	})
 
-	var runAction func(action string)
-	runAction = func(action string) {
-		args, err := guiCommandArgs(action, configPath.Text, taskSelect.Selected, allTasks.Checked)
+	var runAction func(action, scopedPath string)
+	runAction = func(action, scopedPath string) {
+		args, err := guiCommandArgs(action, configPath.Text, taskSelect.Selected, allTasks.Checked, scopedPath)
 		if err != nil {
 			status.SetText(err.Error())
 			return
@@ -388,16 +413,107 @@ func Run() {
 		}
 	}
 
-	doctorButton := widget.NewButtonWithIcon("Doctor", theme.SearchIcon(), func() { runAction("doctor") })
-	dryRunButton := widget.NewButtonWithIcon("Dry run", theme.VisibilityIcon(), func() { runAction("dry-run") })
-	updateButton := widget.NewButtonWithIcon("Update", theme.UploadIcon(), func() { runAction("update") })
+	doctorButton := widget.NewButtonWithIcon("Doctor", theme.SearchIcon(), func() { runAction("doctor", "") })
+	dryRunButton := widget.NewButtonWithIcon("Dry run", theme.VisibilityIcon(), func() { runAction("dry-run", "") })
+	updateButton := widget.NewButtonWithIcon("Update", theme.UploadIcon(), func() { runAction("update", "") })
 	syncButton := widget.NewButtonWithIcon("Sync", theme.MediaPlayIcon(), func() {
 		dialog.NewConfirm("Confirm sync", "Sync makes the remote match the local folder and may delete remote-only files.", func(ok bool) {
 			if ok {
-				runAction("sync")
+				runAction("sync", "")
 			}
 		}, w).Show()
 	})
+	runSpecificSync := func(path string) {
+		dialog.NewConfirm("Confirm specific sync", "Sync makes the remote match the selected local folder and may delete remote-only files in that remote folder.", func(ok bool) {
+			if ok {
+				runAction("sync", path)
+			}
+		}, w).Show()
+	}
+	specificLocation := func() (fyne.ListableURI, error) {
+		selected := strings.TrimSpace(taskSelect.Selected)
+		for _, task := range currentCfg.Tasks {
+			if task.Name != selected {
+				continue
+			}
+			return storage.ListerForURI(storage.NewFileURI(config.ToNativePath(task.Local)))
+		}
+		return nil, fmt.Errorf("select one task to use Specific")
+	}
+	setSpecificLocation := func(d *dialog.FileDialog) bool {
+		location, err := specificLocation()
+		if err != nil {
+			status.SetText(err.Error())
+			return false
+		}
+		d.SetLocation(location)
+		return true
+	}
+	chooseSpecificFile := func() {
+		d := dialog.NewFileOpen(func(rc fyne.URIReadCloser, err error) {
+			if err != nil {
+				status.SetText(err.Error())
+				return
+			}
+			if rc == nil {
+				return
+			}
+			path := rc.URI().Path()
+			_ = rc.Close()
+			runAction("update", path)
+		}, w)
+		if !setSpecificLocation(d) {
+			return
+		}
+		d.Show()
+	}
+	chooseSpecificFolder := func() {
+		d := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
+			if err != nil {
+				status.SetText(err.Error())
+				return
+			}
+			if uri == nil {
+				return
+			}
+			path := uri.Path()
+			var actionDialog *dialog.CustomDialog
+			actionDialog = dialog.NewCustom("Specific folder", "Cancel", container.NewHBox(
+				widget.NewButtonWithIcon("Update", theme.UploadIcon(), func() {
+					actionDialog.Hide()
+					runAction("update", path)
+				}),
+				widget.NewButtonWithIcon("Sync", theme.MediaPlayIcon(), func() {
+					actionDialog.Hide()
+					runSpecificSync(path)
+				}),
+			), w)
+			actionDialog.Show()
+		}, w)
+		if !setSpecificLocation(d) {
+			return
+		}
+		d.Show()
+	}
+	specificButton = widget.NewButtonWithIcon("Specific", theme.FolderOpenIcon(), func() {
+		if allTasks.Checked || strings.TrimSpace(taskSelect.Selected) == "" {
+			status.SetText("Select one task to use Specific")
+			return
+		}
+		var d *dialog.CustomDialog
+		d = dialog.NewCustom("Specific", "Cancel", container.NewHBox(
+			widget.NewButtonWithIcon("File", theme.FileIcon(), func() {
+				d.Hide()
+				chooseSpecificFile()
+			}),
+			widget.NewButtonWithIcon("Folder", theme.FolderOpenIcon(), func() {
+				d.Hide()
+				chooseSpecificFolder()
+			}),
+		), w)
+		d.Show()
+	})
+	refreshSpecific()
 	stopButton = widget.NewButtonWithIcon("Stop", theme.MediaStopIcon(), func() {
 		if currentCancel == nil {
 			return
@@ -432,10 +548,10 @@ func Run() {
 		}, w).Show()
 	})
 
-	controls = []fyne.Disableable{configPath, refreshButton, taskSelect, allTasks, doctorButton, dryRunButton, updateButton, syncButton, clearButton, configTaskSelect, newTaskButton, deleteTaskButton}
+	controls = []fyne.Disableable{configPath, refreshButton, taskSelect, allTasks, doctorButton, dryRunButton, updateButton, syncButton, specificButton, clearButton, configTaskSelect, newTaskButton, deleteTaskButton}
 
 	configRow := container.NewBorder(nil, nil, widget.NewLabel("Config"), refreshButton, configPath)
-	taskRow := container.NewHBox(taskSelect, allTasks, doctorButton, dryRunButton, updateButton, syncButton, stopButton, clearButton)
+	taskRow := container.NewHBox(taskSelect, allTasks, doctorButton, dryRunButton, updateButton, syncButton, specificButton, stopButton, clearButton)
 	syncHeader := container.NewVBox(configRow, taskRow, status)
 	logScroll := container.NewScroll(logOutput)
 	log.scroll = logScroll

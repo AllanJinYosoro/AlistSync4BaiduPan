@@ -22,6 +22,7 @@ func TestGUICommandArgs(t *testing.T) {
 		config   string
 		selected string
 		all      bool
+		path     string
 		want     []string
 		wantErr  bool
 	}{
@@ -52,6 +53,22 @@ func TestGUICommandArgs(t *testing.T) {
 			want:     []string{"sync", "--config", config.DefaultPath, "BioGNN"},
 		},
 		{
+			name:     "specific update",
+			action:   "update",
+			config:   "config.yaml",
+			selected: "PASSRec",
+			path:     "D:/Docs/one.txt",
+			want:     []string{"update", "--config", "config.yaml", "--path", "D:/Docs/one.txt", "PASSRec"},
+		},
+		{
+			name:    "specific all tasks rejected",
+			action:  "update",
+			config:  "config.yaml",
+			all:     true,
+			path:    "D:/Docs",
+			wantErr: true,
+		},
+		{
 			name:    "missing task",
 			action:  "sync",
 			config:  "config.yaml",
@@ -61,7 +78,7 @@ func TestGUICommandArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := guiCommandArgs(tt.action, tt.config, tt.selected, tt.all)
+			got, err := guiCommandArgs(tt.action, tt.config, tt.selected, tt.all, tt.path)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error")

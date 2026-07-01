@@ -3,6 +3,9 @@ package runner
 import (
 	"flag"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"bdp-sync/internal/alist"
 	"bdp-sync/internal/config"
@@ -17,6 +20,7 @@ func (r Runner) cmdTransfer(mode string, args []string) error {
 	fs.SetOutput(r.stderr)
 	configPath := fs.String("config", config.DefaultPath, "config file path")
 	all := fs.Bool("all", false, "run all tasks")
+	scopedPath := fs.String("path", "", "local file or folder path to transfer")
 	fs.Bool("yes", false, "accepted for backward compatibility; sync runs by default")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -35,6 +39,15 @@ func (r Runner) cmdTransfer(mode string, args []string) error {
 	tasks, err := config.SelectTasks(cfg.Tasks, selector, *all)
 	if err != nil {
 		return err
+	}
+	if strings.TrimSpace(*scopedPath) != "" {
+		if *all {
+			return fmt.Errorf("--path requires one selected task, not --all")
+		}
+		tasks[0], err = scopedTask(mode, tasks[0], *scopedPath)
+		if err != nil {
+			return err
+		}
 	}
 	if problems, err := filename.FindUnsupportedUploadNamesContext(r.context(), tasks, filename.MaxProblems); err != nil {
 		return err
@@ -80,6 +93,47 @@ func (r Runner) cmdTransfer(mode string, args []string) error {
 		fmt.Fprintf(r.stdout, "\nDry run skipped %d zero-byte file(s).\n", len(zeroByteFiles))
 	}
 	return nil
+}
+
+func scopedTask(mode string, task config.Task, selected string) (config.Task, error) {
+	root, err := filepath.Abs(config.ToNativePath(task.Local))
+	if err != nil {
+		return task, err
+	}
+	path, err := filepath.Abs(config.ToNativePath(strings.TrimSpace(selected)))
+	if err != nil {
+		return task, err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return task, err
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return task, err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return task, fmt.Errorf("%s is outside task %s local path %s", path, task.Name, root)
+	}
+	if mode == "sync" && !info.IsDir() {
+		return task, fmt.Errorf("--path file is only supported for update")
+	}
+
+	task.Local = path
+	if rel == "." {
+		return task, nil
+	}
+	remoteRel := filepath.ToSlash(rel)
+	if !info.IsDir() {
+		remoteRel = filepath.ToSlash(filepath.Dir(rel))
+		if remoteRel == "." {
+			remoteRel = ""
+		}
+	}
+	if remoteRel != "" {
+		task.Remote = config.TrimRemotePath(task.Remote) + "/" + remoteRel
+	}
+	return task, nil
 }
 
 func (r Runner) runOutput(name string, args ...string) (string, error) {
