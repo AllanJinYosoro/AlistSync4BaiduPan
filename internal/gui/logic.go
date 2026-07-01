@@ -41,6 +41,7 @@ type terminalLogBuffer struct {
 
 	inRcloneProgressBlock bool
 	rcloneProgressStart   int
+	rcloneProgressEnd     int
 	rcloneProgressRestart bool
 }
 
@@ -225,6 +226,7 @@ func (b *terminalLogBuffer) truncateCurrentLine() {
 		return
 	}
 	b.runes = b.runes[:b.lineStart]
+	b.clampRcloneProgressRange()
 }
 
 func (b *terminalLogBuffer) backspace() {
@@ -238,48 +240,90 @@ func (b *terminalLogBuffer) finishLine(start int) {
 		return
 	}
 	line := string(b.runes[start : len(b.runes)-1])
+	if split := embeddedRcloneProgressStartIndex(line); split > 0 {
+		b.runes = append(b.runes[:start], b.runes[start+split:]...)
+		b.lineStart = len(b.runes)
+		line = string(b.runes[start : len(b.runes)-1])
+	}
+
 	trimmed := strings.TrimSpace(line)
 	if isRcloneProgressStart(trimmed) && (!b.inRcloneProgressBlock || b.rcloneProgressRestart) {
-		if b.inRcloneProgressBlock && b.rcloneProgressStart < start {
-			tail := append([]rune(nil), b.runes[start:]...)
-			b.runes = append(b.runes[:b.rcloneProgressStart], tail...)
-			b.lineStart = len(b.runes)
-			start = b.rcloneProgressStart
-		}
-		b.inRcloneProgressBlock = true
-		b.rcloneProgressStart = start
-		b.rcloneProgressRestart = false
+		b.startRcloneProgressBlock(start)
 		return
 	}
 	if !b.inRcloneProgressBlock {
 		return
 	}
-	if trimmed == "" || line != trimmed || isRcloneProgressLine(trimmed) {
+	if trimmed == "" || hasLeadingWhitespace(line) || isRcloneProgressLine(trimmed) {
+		b.rcloneProgressEnd = len(b.runes)
 		if trimmed == "" || isRcloneProgressTail(trimmed) {
 			b.rcloneProgressRestart = true
 		}
 		return
 	}
 	b.inRcloneProgressBlock = false
+}
+
+func (b *terminalLogBuffer) startRcloneProgressBlock(start int) {
+	if b.rcloneProgressStart < start && b.rcloneProgressEnd > b.rcloneProgressStart {
+		removed := b.rcloneProgressEnd - b.rcloneProgressStart
+		tail := append([]rune(nil), b.runes[b.rcloneProgressEnd:]...)
+		b.runes = append(b.runes[:b.rcloneProgressStart], tail...)
+		start -= removed
+		if start < b.rcloneProgressStart {
+			start = b.rcloneProgressStart
+		}
+		b.lineStart = len(b.runes)
+	}
+	b.inRcloneProgressBlock = true
+	b.rcloneProgressStart = start
+	b.rcloneProgressEnd = len(b.runes)
 	b.rcloneProgressRestart = false
 }
 
+func (b *terminalLogBuffer) clampRcloneProgressRange() {
+	if b.rcloneProgressStart > len(b.runes) {
+		b.rcloneProgressStart = len(b.runes)
+	}
+	if b.rcloneProgressEnd > len(b.runes) {
+		b.rcloneProgressEnd = len(b.runes)
+	}
+	if b.rcloneProgressEnd < b.rcloneProgressStart {
+		b.rcloneProgressEnd = b.rcloneProgressStart
+	}
+}
+
+func hasLeadingWhitespace(line string) bool {
+	return strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")
+}
+
+func embeddedRcloneProgressStartIndex(line string) int {
+	for _, marker := range []string{"Errors:", "Transferred:"} {
+		if i := strings.Index(line, marker); i > 0 && isRcloneProgressLine(strings.TrimSpace(line[:i])) {
+			return len([]rune(line[:i]))
+		}
+	}
+	return -1
+}
+
 func isRcloneProgressStart(line string) bool {
-	return line == "Errors:" || line == "Transferred:"
+	return strings.HasPrefix(line, "Errors:") || strings.HasPrefix(line, "Transferred:")
 }
 
 func isRcloneProgressLine(line string) bool {
-	switch line {
-	case "Errors:", "Checks:", "Transferred:", "Elapsed time:", "Checking:", "Transferring:", "Deleting:", "Renaming:":
-		return true
+	for _, prefix := range []string{"Errors:", "Checks:", "Transferred:", "Elapsed time:", "Checking:", "Transferring:", "Deleting:", "Renaming:"} {
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
 	}
 	return strings.HasPrefix(line, "* ") || strings.Contains(line, " / ") || strings.Contains(line, " B/s")
 }
 
 func isRcloneProgressTail(line string) bool {
-	switch line {
-	case "Checking:", "Transferring:", "Deleting:", "Renaming:":
-		return true
+	for _, prefix := range []string{"Checking:", "Transferring:", "Deleting:", "Renaming:"} {
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
 	}
 	return strings.HasPrefix(line, "* ")
 }

@@ -199,3 +199,59 @@ func TestTerminalLogBufferKeepsSingleRcloneStatsBlockFieldsTogether(t *testing.T
 		t.Fatalf("terminal log mismatch\n got: %q\nwant: %q", got, want)
 	}
 }
+
+func TestTerminalLogBufferCollapsesRcloneProgressAroundDryRunLines(t *testing.T) {
+	var b terminalLogBuffer
+	got := b.Append("start\nTransferred:\n    1 MiB / 10 MiB, 10%, 1 MiB/s, ETA 9s\nChecks: 1 / 10, 10%\nElapsed time: 0.1s\nChecking:\n * old.txt: checking\n= old.txt\nTransferred:\n    2 MiB / 10 MiB, 20%, 1 MiB/s, ETA 8s\nChecks: 2 / 10, 20%\nElapsed time: 0.2s\nChecking:\n * new.txt: checking\n= new.txt\nTransferred:\n    3 MiB / 10 MiB, 30%, 1 MiB/s, ETA 7s\nChecks: 3 / 10, 30%\nElapsed time: 0.3s\n")
+	want := "start\n= old.txt\n= new.txt\nTransferred:\n    3 MiB / 10 MiB, 30%, 1 MiB/s, ETA 7s\nChecks: 3 / 10, 30%\nElapsed time: 0.3s\n"
+	if got != want {
+		t.Fatalf("terminal log mismatch\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestTerminalLogBufferCollapsesRealRcloneDryRunProgress(t *testing.T) {
+	var b terminalLogBuffer
+	got := b.Append(`026-5-25会议/滴滴报销/回程-滴滴电子发票.pdf
+Transferred:   
+          0 B / 0 B, -, 0 B/s, ETA -
+Checks:                31 / 32, 97%, Listed 96
+Elapsed time:         0.1s
+Checking:
+ *       Timeline/2026-5-25会议/滴滴报销/回程-滴滴电子发票.pdf: ch
+= %SystemDrive%/ProgramData/SogouInput/Components/Picface/Cloud/sgim_picface_cloud.bin
+Transferred:   
+          0 B / 0 B, -, 0 B/s, ETA -
+Checks:                32 / 34, 94%, Listed 105
+Elapsed time:         0.1s
+Checking:
+ * %SystemDrive%/ProgramD…sgim_picface_cloud.bin: checking
+ * %SystemDrive%/ProgramD…_picface_cloud_bak.bin: checking
+= %SystemDrive%/ProgramData/SogouInput/Components/Picface/Cloud/sgim_picface_cloud_bak.bin
+Transferred:   
+          0 B / 0 B, -, 0 B/s, ETA -
+Checks:                33 / 34, 97%, Listed 105
+Elapsed time:         0.1s
+Checking:
+ * %SystemDrive%/ProgramD…_picface_cloud_bak.bin: checkingTransferred:   
+          0 B / 0 B, -, 0 B/s, ETA -
+Checks:                34 / 34, 100%, Listed 105
+Elapsed time:         0.1s
+2026/07/01 21:49:02 NOTICE: 
+Transferred:   
+          0 B / 0 B, -, 0 B/s, ETA -
+Checks:                34 / 34, 100%, Listed 105
+Elapsed time:         0.1s
+`)
+	want := `026-5-25会议/滴滴报销/回程-滴滴电子发票.pdf
+= %SystemDrive%/ProgramData/SogouInput/Components/Picface/Cloud/sgim_picface_cloud.bin
+= %SystemDrive%/ProgramData/SogouInput/Components/Picface/Cloud/sgim_picface_cloud_bak.bin
+2026/07/01 21:49:02 NOTICE: 
+Transferred:   
+          0 B / 0 B, -, 0 B/s, ETA -
+Checks:                34 / 34, 100%, Listed 105
+Elapsed time:         0.1s
+`
+	if got != want {
+		t.Fatalf("terminal log mismatch\n got: %q\nwant: %q", got, want)
+	}
+}
